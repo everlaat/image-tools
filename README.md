@@ -89,6 +89,19 @@ radius means output pixels rather than model pixels.
 the UI says so. An 8000×6000 photo is 192 MB as RGBA, which is enough to get a mobile tab
 killed.
 
+### Edge alignment
+
+A mask is computed at 512 or 1024 and then stretched to the full image, so its
+boundary is soft and slightly off wherever the real edge is. **Align to image
+edges** runs a guided filter (He et al.) with the image's luma as the guide: in
+a flat region it behaves like a blur, but across a strong edge in the guide it
+follows that edge, which pulls a stretched boundary back onto the subject's
+actual outline. It is on by default at 0.7, costs one O(pixels) pass regardless
+of radius, and is the single biggest improvement on hair and fine detail.
+
+It runs _before_ threshold, hardness and feather — thresholding a misaligned
+edge only entrenches it.
+
 ### Fixing a cutout by hand
 
 Matting models are not promptable — BiRefNet takes only `input_image`, MODNet only
@@ -340,8 +353,17 @@ service worker detects the page is already isolated and does nothing.
   are on.
 - **The 1024 model needs WebGPU with `shader-f16`.** It is offered but clearly marked, and
   the app explains the specific reason when it cannot be used.
-- **MODNet is human-matting only.** Flagged in the picker.
+- **MODNet and ormbg are trained on people**, so they are less reliable on
+  objects and products. Both are flagged in the picker; BiRefNet is the general
+  choice.
+- **BEN2 is WebGPU-only.** At ~30 s per image on the CPU it is not worth
+  offering a fallback, and its fp16 weights need `shader-f16`.
 - **Images are capped at 4096 px** on the longest edge for memory safety.
+- **A WebGPU failure mid-run falls back to the CPU.** A graph can exceed a
+  device limit — `maxStorageBuffersPerShaderStage` is the common one — only when
+  shaders are compiled during the run, after the session has built cleanly.
+  There is no way to test for it up front, so the failure is caught, the work is
+  redone on WASM, and the badge says why.
 - **WebGPU is not exercised by the automated suite.** The default headless browser exposes
   no adapter; it can be forced on with `--enable-unsafe-webgpu --use-angle=swiftshader`,
   but that software adapter lacks `shader-f16`, so it cannot run the fp16 models either.
