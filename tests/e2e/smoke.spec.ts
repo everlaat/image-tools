@@ -3,7 +3,9 @@ import { expect, test } from '@playwright/test';
 test('app shell loads with the background removal tool selected', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: 'Image Tools', level: 1 })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Image Tools', level: 1 }),
+  ).toBeVisible();
 
   const tool = page.getByRole('button', { name: /Remove background/ });
   await expect(tool).toHaveAttribute('aria-current', 'page');
