@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -28,6 +29,16 @@ export default defineConfig({
   server: { headers: crossOriginIsolation },
   preview: { headers: crossOriginIsolation },
   worker: { format: 'es' },
+  resolve: {
+    alias: {
+      // Built from crates/vtracer-wasm by `pnpm build:wasm`. Aliased rather
+      // than linked as a workspace package because the output is generated
+      // and gitignored, so it may not exist when dependencies are installed.
+      '@vtracer': fileURLToPath(
+        new URL('./crates/vtracer-wasm/pkg/vtracer_wasm.js', import.meta.url),
+      ),
+    },
+  },
   optimizeDeps: {
     // onnxruntime-web points at its .wasm with `new URL(..., import.meta.url)`.
     // Pre-bundling rewrites that reference and the runtime then falls back to a

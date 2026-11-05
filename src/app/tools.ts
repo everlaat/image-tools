@@ -19,7 +19,7 @@ export const TOOLS: readonly [ToolDescriptor, ...ToolDescriptor[]] = [
     id: 'vectorize',
     label: 'Logo to SVG',
     description: 'Trace a raster logo into clean, scalable vector paths.',
-    available: false,
+    available: true,
   },
   {
     id: 'layers',

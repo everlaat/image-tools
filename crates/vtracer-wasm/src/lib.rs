@@ -5,8 +5,8 @@
 //! `vtracer-wasm` package, which declares no licence at all. The obvious
 //! alternative, potrace, is GPL-2.0 and would force the whole app to GPL.
 
-use vtracer::{ColorImage, ColorMode, Config, Hierarchical};
 use visioncortex::PathSimplifyMode;
+use vtracer::{ColorImage, ColorMode, Config, Hierarchical};
 use wasm_bindgen::prelude::*;
 
 /// Tracing parameters, mirroring vtracer's own config with friendlier names.
@@ -70,12 +70,24 @@ impl TraceOptions {
 impl From<TraceOptions> for Config {
     fn from(o: TraceOptions) -> Config {
         Config {
-            color_mode: if o.binary { ColorMode::Binary } else { ColorMode::Color },
-            hierarchical: if o.cutout { Hierarchical::Cutout } else { Hierarchical::Stacked },
+            color_mode: if o.binary {
+                ColorMode::Binary
+            } else {
+                ColorMode::Color
+            },
+            hierarchical: if o.cutout {
+                Hierarchical::Cutout
+            } else {
+                Hierarchical::Stacked
+            },
             filter_speckle: o.filter_speckle,
             color_precision: o.color_precision,
             layer_difference: o.layer_difference,
-            mode: if o.spline { PathSimplifyMode::Spline } else { PathSimplifyMode::Polygon },
+            mode: if o.spline {
+                PathSimplifyMode::Spline
+            } else {
+                PathSimplifyMode::Polygon
+            },
             corner_threshold: o.corner_threshold,
             length_threshold: o.length_threshold,
             max_iterations: o.max_iterations,

@@ -16,10 +16,28 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # The vectoriser is Rust compiled to wasm. Its pkg/ output is generated
+      # rather than committed, and the TypeScript path alias points at it, so
+      # this has to run before typecheck.
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/.wasm-pack
+            crates/vtracer-wasm/target
+          key: wasm-${{ runner.os }}-${{ hashFiles('crates/vtracer-wasm/**') }}
+          restore-keys: wasm-${{ runner.os }}-
+      - run: pnpm build:wasm
+
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm test
+      - run: cargo fmt --manifest-path crates/vtracer-wasm/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path crates/vtracer-wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
 
   e2e:
     runs-on: ubuntu-latest
@@ -31,6 +49,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/.wasm-pack
+            crates/vtracer-wasm/target
+          key: wasm-${{ runner.os }}-${{ hashFiles('crates/vtracer-wasm/**') }}
+          restore-keys: wasm-${{ runner.os }}-
+      - run: pnpm build:wasm
+
       - run: pnpm exec playwright install --with-deps chromium
       # Downloads a real ~6.6 MB model from Hugging Face, so this needs network.
       - run: pnpm test:e2e

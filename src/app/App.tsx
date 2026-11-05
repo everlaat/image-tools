@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { BackgroundRemoval } from '../features/background-removal/BackgroundRemoval.tsx';
+import { Vectorize } from '../features/vectorize/Vectorize.tsx';
 import { ModelCacheSettings } from '../components/ModelCacheSettings.tsx';
 import { TOOLS, type ToolId } from './tools.ts';
 
@@ -47,9 +48,9 @@ export function App() {
 
         <main className="flex-1">
           <h2 className="sr-only">{activeTool.label}</h2>
-          {activeTool.id === 'background-removal' ? (
-            <BackgroundRemoval />
-          ) : (
+          {activeTool.id === 'background-removal' && <BackgroundRemoval />}
+          {activeTool.id === 'vectorize' && <Vectorize />}
+          {activeTool.id === 'layers' && (
             <p className="text-sm text-ink-muted">{activeTool.description}</p>
           )}
         </main>

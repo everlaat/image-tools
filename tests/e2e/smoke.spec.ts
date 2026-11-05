@@ -10,8 +10,9 @@ test('app shell loads with the background removal tool selected', async ({ page 
   const tool = page.getByRole('button', { name: /Remove background/ });
   await expect(tool).toHaveAttribute('aria-current', 'page');
 
-  // Tools from later phases are present but not yet selectable.
-  await expect(page.getByRole('button', { name: /Logo to SVG/ })).toBeDisabled();
+  // Shipped tools are selectable; tools from later phases are not.
+  await expect(page.getByRole('button', { name: /Logo to SVG/ })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /Split layers/ })).toBeDisabled();
 });
 
 test('tool navigation is reachable by keyboard', async ({ page }) => {

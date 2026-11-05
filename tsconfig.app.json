@@ -24,6 +24,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
+    "paths": {
+      "@vtracer": ["./crates/vtracer-wasm/pkg"]
+    },
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
   },
   "include": ["src", "tests/unit"]

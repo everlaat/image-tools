@@ -4,15 +4,21 @@ Background removal, logo vectorising and layer splitting that run **entirely in 
 browser**. Images are decoded, segmented and encoded on your own device; nothing is
 uploaded and there is no inference server.
 
-> **Status:** Phase 1 (shell + background removal) is implemented. Phases 2 and 3 are
-> described in [Roadmap](#roadmap).
+> **Status:** Phase 1 (background removal) and Phase 2 (logo → SVG) are implemented.
+> Phase 3 is described in [Roadmap](#roadmap).
 
 ## Setup
 
 ```bash
 pnpm install
+pnpm build:wasm   # compiles the Rust vectoriser; needed once before dev/build
 pnpm dev          # http://localhost:5173
 ```
+
+`pnpm build:wasm` needs a Rust toolchain with the `wasm32-unknown-unknown` target
+(`rustup target add wasm32-unknown-unknown`). Its output lands in
+`crates/vtracer-wasm/pkg`, which is generated rather than committed — if typecheck
+cannot resolve `@vtracer`, that build has not been run.
 
 | Script                              | What it does                                   |
 | ----------------------------------- | ---------------------------------------------- |
@@ -35,7 +41,8 @@ src/
   app/                    shell, tool registry
   components/             Dropzone, CompareSlider, RangeField, ProgressBar, cache settings
   features/
-    background-removal/   the Phase 1 tool: hook, model picker, backend badge
+    background-removal/   Phase 1: hook, model picker, backend badge
+    vectorize/            Phase 2: hook, live SVG preview, trace settings
   lib/
     models/
       registry.ts         ← every model lives here: id, URL, size, I/O names, licence
@@ -43,8 +50,13 @@ src/
       cache.ts            Cache API storage, streaming progress, clear
       session.ts          owns one ORT session; load / run / dispose
     image/                decode, resample, tensor conversion, mask maths, PNG encode
+    color/quantise.ts     median cut + k-means palette reduction
+    vector/options.ts     tracing settings, kept free of the wasm import
   workers/
-    matting.worker.ts     all inference and pixel work, exposed over Comlink
+    matting.worker.ts     inference and pixel work, exposed over Comlink
+    vectorize.worker.ts   quantise + trace, exposed over Comlink
+crates/
+  vtracer-wasm/           Rust bindings around vtracer, built to WebAssembly
 ```
 
 **Everything heavy happens in a Web Worker.** The UI thread never decodes, never runs a
@@ -154,6 +166,39 @@ preprocessing, keeps the pre/post-processing unit-testable, and gives precise co
 execution providers. transformers.js remains the right tool for Phase 3, where SlimSAM and
 Depth Anything are exported conventionally and ship real processors.
 
+## Vectorising (Phase 2)
+
+Almost none of this is machine learning. The pipeline is **quantise, then trace**:
+
+1. **Colour reduction** to a count the user picks. Median cut builds the palette and
+   k-means optionally refines it. This is deliberately ours rather than vtracer's own
+   `color_precision`, because the brief asks for an exact colour count, not an
+   approximate precision knob — so vtracer's internal quantisation is turned down to
+   its most faithful setting and does not quantise a second time.
+2. **Tracing** with [vtracer](https://crates.io/crates/vtracer), compiled from source.
+
+Flat artwork keeps its exact colours. If an image has four colours and you ask for
+eight, you get those four back untouched rather than eight blended averages — median cut
+splits at medians, which would otherwise turn exact brand colours into approximations of
+themselves.
+
+Cleanliness comes from vtracer's own speckle filter (exposed as **Remove speckles**),
+stacked layers so adjacent colours share edges instead of leaving seams, and an
+adjustable coordinate precision that trims file size. The 512×512 fixture in the test
+suite traces to 5 paths and 3.1 kB in about 56 ms.
+
+### Why vtracer compiled from source
+
+The npm `vtracer-wasm` package **declares no licence at all**, which makes it unusable.
+`potrace` and `esm-potrace-wasm` are **GPL-2.0**, which would force the whole
+application to GPL. The vtracer crate itself is **MIT OR Apache-2.0** and compiles
+cleanly to `wasm32-unknown-unknown`, so the project builds it rather than depending on
+either. The result is 172 kB of wasm (59 kB gzipped).
+
+`wasm-opt` is disabled: it downloads a binaryen release at build time, which makes the
+build depend on network access and differ between machines. rustc already applies
+`opt-level = 3` and fat LTO.
+
 ## Accessibility
 
 Keyboard operable throughout, with a visible focus ring on every interactive element. The
@@ -176,7 +221,7 @@ required; all four target browsers have them.
 
 **One manual step is required first:** go to **Settings → Pages** and set **Source** to
 **GitHub Actions**. This cannot be automated — creating a Pages site is not permitted to
-the default `GITHUB_TOKEN`, which fails with *Resource not accessible by integration*.
+the default `GITHUB_TOKEN`, which fails with _Resource not accessible by integration_.
 After that the workflow needs no secrets and no further setup.
 
 Two things make this work on a host that cannot set response headers:
@@ -218,13 +263,16 @@ service worker detects the page is already isolated and does nothing.
   but that software adapter lacks `shader-f16`, so it cannot run the fp16 models either.
   The WebGPU path needs a manual check on real hardware.
 - **No cancel button yet** for an in-flight model download.
+- **Vectorising ignores transparency.** Alpha is not currently used to exclude regions,
+  so a logo on a transparent background traces that background as a shape. Compositing
+  onto a chosen colour, or dropping the background path, is the obvious next step.
+- **Vector input is capped at 1600 px** on the longest edge; tracing cost scales with
+  area and logos gain nothing above it.
+- **No upscale/denoise pre-step** for low-resolution input, which the brief lists as
+  optional for this phase.
 
 ## Roadmap
 
-- **Phase 2 — Logo → SVG.** Colour quantisation (k-means / median cut) then tracing with
-  **vtracer compiled to WASM from source**. vtracer is MIT and compiles cleanly to
-  `wasm32-unknown-unknown`; the npm `vtracer-wasm` package declares no licence and potrace
-  is GPL-2.0, so neither is usable here.
 - **Phase 3 — Layer splitting.** SlimSAM (Apache-2.0, 20.8 MB fp16) with click-to-select
   points, and Depth Anything V2 Small (Apache-2.0) to suggest foreground/midground/
   background. Note only the _Small_ Depth Anything is Apache; Base and larger are
