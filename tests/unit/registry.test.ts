@@ -106,3 +106,26 @@ describe('resolveInputSize', () => {
     expect(size.width / size.height).toBeCloseTo(sourceRatio, 1);
   });
 });
+
+describe('mask output handling', () => {
+  it('squashes logits for BiRefNet and reads the rest as probabilities', () => {
+    // Measured on the real exports: BiRefNet emits roughly [-28, 24] while
+    // ormbg, BEN2 and MODNet are already 0..1. Getting this wrong smears a
+    // crisp mask into a grey gradient.
+    expect(getMattingModel('birefnet-lite-512').output).toEqual({
+      sigmoid: true,
+      normalise: false,
+    });
+    expect(getMattingModel('birefnet-lite-1024').output.sigmoid).toBe(true);
+
+    for (const id of ['ormbg', 'ben2', 'modnet'] as const) {
+      expect(getMattingModel(id).output).toEqual({ sigmoid: false, normalise: false });
+    }
+  });
+
+  it('never min-max rescales, which would stretch noise into visible alpha', () => {
+    for (const model of MATTING_MODELS) {
+      expect(model.output.normalise).toBe(false);
+    }
+  });
+});

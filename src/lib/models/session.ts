@@ -157,7 +157,7 @@ export class MattingSession {
 
       // Trust the graph's own output size: a dynamic model may round.
       const [, , height = resized.height, width = resized.width] = output.dims;
-      return fromModelOutput(values, width, height, { normalise: true });
+      return fromModelOutput(values, width, height, this.model.output);
     } finally {
       // Free the GPU/WASM buffers rather than waiting for GC.
       tensor.dispose();

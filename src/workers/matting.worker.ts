@@ -28,6 +28,7 @@ import {
   resizeMask,
   type EdgeRefinement,
 } from '../lib/image/mask.ts';
+import { guidedRefine, lumaOf } from '../lib/image/guided.ts';
 import type { GrayMask, Rgba } from '../lib/image/pixels.ts';
 
 export interface SegmentResult {
@@ -61,6 +62,8 @@ class MattingWorker {
    */
   private edits: Float32Array | null = null;
   private strokes: BrushStroke[] = [];
+  /** Guide for edge alignment; depends only on the image, so computed once. */
+  private luma: Float32Array | null = null;
 
   /** Only constructed if the brush's smart-select mode is actually used. */
   private readonly sam = new SamEngine();
@@ -96,6 +99,7 @@ class MattingWorker {
     // A new image invalidates every correction and the cached embeddings.
     this.edits = createEditBuffer(decoded.image.width, decoded.image.height);
     this.strokes = [];
+    this.luma = null;
     this.sam.releaseEmbeddings();
 
     const inputSize = session.inputSizeFor(decoded.image);
@@ -203,6 +207,7 @@ class MattingWorker {
     this.mask = null;
     this.edits = null;
     this.strokes = [];
+    this.luma = null;
   }
 
   /** Model mask, lifted and refined, with manual corrections on top. */
@@ -213,7 +218,22 @@ class MattingWorker {
 
     // Lift to full resolution first so a feather radius means output pixels.
     const full = resizeMask(mask, source.width, source.height);
-    const refined = refineMask(full, refinement);
+
+    // Re-fit the upscaled edge to the image before anything else touches it:
+    // thresholding or feathering a misaligned edge only entrenches it.
+    let aligned = full;
+    if (refinement.edgeAlign > 0) {
+      this.luma ??= lumaOf(source);
+      aligned = guidedRefine(full, this.luma, {
+        // Radius scales with the image so the window covers a comparable
+        // amount of real detail whatever the resolution.
+        radius: Math.max(2, Math.round(Math.max(source.width, source.height) / 400)),
+        epsilon: 1e-4,
+        strength: refinement.edgeAlign,
+      });
+    }
+
+    const refined = refineMask(aligned, refinement);
 
     // Corrections go on last: a deliberate fix should not then be blurred or
     // thresholded away by the sliders.

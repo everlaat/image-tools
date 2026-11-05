@@ -51,6 +51,9 @@ const IMAGENET: Normalisation = {
 
 const HALF: Normalisation = { mean: [0.5, 0.5, 0.5], std: [0.5, 0.5, 0.5] };
 
+/** Plain 0..1 rescale: some exports bake normalisation into the graph. */
+const NONE: Normalisation = { mean: [0, 0, 0], std: [1, 1, 1] };
+
 /**
  * How the model wants its input sized. `fixed` graphs refuse anything else;
  * `dynamic` graphs accept any size, so the image is fitted to `target` on its
@@ -61,7 +64,25 @@ export type InputSpec =
   | { readonly kind: 'fixed'; readonly width: number; readonly height: number }
   | { readonly kind: 'dynamic'; readonly target: number; readonly multipleOf: number };
 
-export type MattingModelId = 'birefnet-lite-1024' | 'birefnet-lite-512' | 'modnet';
+export interface MaskOutput {
+  /** Export emits logits, so squash them into 0..1. */
+  readonly sigmoid: boolean;
+  /**
+   * Rescale by the observed min and max. Only correct for an export whose
+   * range is arbitrary; on a well-formed mask it stretches whatever faint
+   * noise is present into visible alpha.
+   */
+  readonly normalise: boolean;
+}
+
+/** Already a probability map: read it as-is. */
+const PROBABILITIES: MaskOutput = { sigmoid: false, normalise: false };
+
+/** Unbounded scores: a sigmoid is the correct squash, not a rescale. */
+const LOGITS: MaskOutput = { sigmoid: true, normalise: false };
+
+export type MattingModelId =
+  'ormbg' | 'birefnet-lite-512' | 'birefnet-lite-1024' | 'ben2' | 'modnet';
 
 export interface MattingModel {
   readonly id: MattingModelId;
@@ -75,6 +96,13 @@ export interface MattingModel {
   /** Exact size of `file`, used for download progress before headers arrive. */
   readonly downloadBytes: number;
   readonly io: { readonly input: string; readonly output: string };
+  /**
+   * How to read the raw output. Measured per export, not assumed: BiRefNet
+   * emits logits in roughly [-28, 24], while ormbg, BEN2 and MODNet emit
+   * probabilities already in 0..1. Squashing the wrong one, or min-max
+   * rescaling logits, turns a crisp mask into a grey gradient.
+   */
+  readonly output: MaskOutput;
   readonly input: InputSpec;
   readonly normalisation: Normalisation;
   /**
@@ -96,6 +124,26 @@ export interface MattingModel {
 
 export const MATTING_MODELS: readonly [MattingModel, ...MattingModel[]] = [
   {
+    id: 'ormbg',
+    task: 'matting',
+    label: 'ormbg',
+    summary: 'Sharpest edges on people, and the quickest of the high-detail models.',
+    repo: 'onnx-community/ormbg-ONNX',
+    file: 'onnx/model_quantized.onnx',
+    downloadBytes: 44_349_409,
+    io: { input: 'pixel_values', output: 'alphas' },
+    output: PROBABILITIES,
+    input: { kind: 'fixed', width: 1024, height: 1024 },
+    // The export rescales to 0..1 and does its own normalisation internally.
+    normalisation: NONE,
+    // Measured: a full 1024 mask on the CPU in ~2.9s, which is three times
+    // quicker than BiRefNet at half the resolution. Being int8 it needs no
+    // shader-f16, so it also runs on GPUs that reject the fp16 exports.
+    backends: ['webgpu', 'wasm'],
+    licence: LICENCES.apache2,
+    caveat: 'Trained on people — less reliable on objects and products.',
+  },
+  {
     id: 'birefnet-lite-512',
     task: 'matting',
     label: 'BiRefNet lite',
@@ -105,6 +153,7 @@ export const MATTING_MODELS: readonly [MattingModel, ...MattingModel[]] = [
     file: 'onnx/model_fp16.onnx',
     downloadBytes: 98_484_532,
     io: { input: 'input_image', output: 'output_image' },
+    output: LOGITS,
     input: { kind: 'fixed', width: 512, height: 512 },
     normalisation: IMAGENET,
     // Measured: works on both. WASM takes ~14s to build the session and ~9s
@@ -123,6 +172,7 @@ export const MATTING_MODELS: readonly [MattingModel, ...MattingModel[]] = [
     file: 'onnx/model_fp16.onnx',
     downloadBytes: 114_538_221,
     io: { input: 'input_image', output: 'output_image' },
+    output: LOGITS,
     input: { kind: 'fixed', width: 1024, height: 1024 },
     normalisation: IMAGENET,
     // Measured: WASM dies with std::bad_alloc partway through the run at this
@@ -133,6 +183,25 @@ export const MATTING_MODELS: readonly [MattingModel, ...MattingModel[]] = [
     caveat: 'WebGPU only — too memory-hungry for the CPU fallback.',
   },
   {
+    id: 'ben2',
+    task: 'matting',
+    label: 'BEN2',
+    summary: 'Highest quality available, but a large download and a capable GPU.',
+    repo: 'onnx-community/BEN2-ONNX',
+    file: 'onnx/model_fp16.onnx',
+    downloadBytes: 219_082_799,
+    io: { input: 'pixel_values', output: 'alphas' },
+    output: PROBABILITIES,
+    input: { kind: 'fixed', width: 1024, height: 1024 },
+    normalisation: IMAGENET,
+    // Measured at ~30s per image on the CPU, which is not usable, so no WASM
+    // fallback is offered. fp16 weights also need shader-f16.
+    backends: ['webgpu'],
+    requiresGpuFeatures: ['shader-f16'],
+    licence: LICENCES.mit,
+    caveat: 'WebGPU only, and 219 MB — try it if your GPU handles the others.',
+  },
+  {
     id: 'modnet',
     task: 'matting',
     label: 'MODNet',
@@ -141,6 +210,7 @@ export const MATTING_MODELS: readonly [MattingModel, ...MattingModel[]] = [
     file: 'onnx/model_quantized.onnx',
     downloadBytes: 6_632_188,
     io: { input: 'input', output: 'output' },
+    output: PROBABILITIES,
     input: { kind: 'dynamic', target: 512, multipleOf: 32 },
     normalisation: HALF,
     backends: ['webgpu', 'wasm'],
@@ -259,6 +329,8 @@ export interface DepthModel {
   readonly file: string;
   readonly downloadBytes: number;
   readonly io: { readonly input: string; readonly output: string };
+  // No MaskOutput here: depth is a relative distance map with no fixed
+  // range, rescaled by normaliseDepth rather than read as a probability.
   readonly input: InputSpec;
   readonly normalisation: Normalisation;
   readonly backends: readonly Backend[];
