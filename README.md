@@ -73,6 +73,13 @@ model and never encodes a PNG, so it stays responsive even on a large image.
 feather or threshold slider re-composites from the mask already in hand rather than
 re-running the model, which is the difference between milliseconds and seconds.
 
+**Corrections are kept apart from the model's mask.** Brush strokes live in their own
+signed buffer — positive forces a pixel opaque, negative forces it transparent, zero
+defers to the model — and are applied _after_ the refinement sliders. That way moving a
+slider does not destroy painting, and painting is not then blurred or thresholded away.
+The stroke list is the source of truth, so undo rebuilds the buffer rather than trying
+to reverse a blend.
+
 **Masks come back at inference resolution and are lifted to full resolution** with a
 bilinear resample that maps destination pixel _centres_ into source space, so the result
 is not shifted half a pixel. Edge refinement is applied after that lift, so a feather
@@ -81,6 +88,25 @@ radius means output pixels rather than model pixels.
 **Images larger than 4096 px on the longest edge are scaled down** before processing and
 the UI says so. An 8000×6000 photo is 192 MB as RGBA, which is enough to get a mobile tab
 killed.
+
+### Fixing a cutout by hand
+
+Matting models are not promptable — BiRefNet takes only `input_image`, MODNet only
+`input` — so a brush cannot steer them. Two things are offered instead:
+
+- **Paint directly.** A circular brush with a soft falloff adds the subject back or
+  removes leftover background. Instant, no extra download. The stroke in progress is
+  drawn locally on a canvas so the line follows the pointer; only on release does the
+  worker bake it in, because round-tripping every `pointermove` would lag on a large
+  image.
+- **Smart select.** One click hands the point to SlimSAM, which selects the whole
+  object and folds it into the corrections. Costs a 17.5 MB download and about 8
+  seconds on first use, then roughly 0.4 s per click. Shares the same `SamEngine` as the
+  layer splitter.
+
+A **preview background** picker sits behind the cutout — checkerboard, white, greys,
+black, or any custom colour. Haloes and fringing are invisible against some backgrounds
+and obvious against others. The exported PNG stays transparent regardless.
 
 ### Backends
 
@@ -256,7 +282,10 @@ centroid lands within 0.4% of where the click was.
 
 ## Accessibility
 
-Keyboard operable throughout, with a visible focus ring on every interactive element. The
+Keyboard operable throughout, with a visible focus ring on every interactive element.
+The one exception is painting itself, which needs a pointer; every brush _control_
+(mode, size, smart select, undo, clear) is keyboard reachable, and the refinement
+sliders remain a complete pointer-free path to a good cutout. The
 before/after comparison is an `<input type="range">` rather than a mouse-only drag target,
 so it works with a keyboard and announces its value. Controls are labelled and the
 progress bar exposes `role="progressbar"`. `prefers-reduced-motion` is respected.
@@ -318,6 +347,9 @@ service worker detects the page is already isolated and does nothing.
   but that software adapter lacks `shader-f16`, so it cannot run the fp16 models either.
   The WebGPU path needs a manual check on real hardware.
 - **No cancel button yet** for an in-flight model download.
+- **Painting needs a pointer.** There is no keyboard equivalent for drawing a stroke.
+- **Smart select costs 17.5 MB** on first use and about 8 seconds including the
+  download; later clicks are ~0.4 s.
 - **SAM is weak on flat synthetic artwork.** It is trained on photographs, so on
   vector-like test images it tends to select a small region around the click. On photos
   it behaves as expected. The coordinate transform is verified independently of this.

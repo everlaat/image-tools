@@ -71,6 +71,103 @@ test.describe('background removal', () => {
     expect(stats.clearRatio).toBeGreaterThan(0.02);
   });
 
+  test('the preview background can be changed to judge the edges', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Model').selectOption('modnet');
+    await page.setInputFiles('input[type="file"]', FIXTURE);
+    await expect(page.getByRole('link', { name: 'Download PNG' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+      { timeout: 180_000 },
+    );
+
+    // Defaults to the transparency checkerboard.
+    const surface = page.locator('figure div').first();
+    await expect(surface).toHaveClass(/alpha-grid/);
+
+    await page.getByRole('radio', { name: 'White' }).click();
+    await expect(surface).not.toHaveClass(/alpha-grid/);
+    await expect(surface).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+
+    await page.getByRole('radio', { name: 'Black' }).click();
+    await expect(surface).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+  });
+
+  test('the brush adds to the cutout, and undo takes it back', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Model').selectOption('modnet');
+    await page.setInputFiles('input[type="file"]', FIXTURE);
+    await expect(page.getByRole('link', { name: 'Download PNG' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+      { timeout: 180_000 },
+    );
+
+    const before = (await alphaStats(page)).opaqueRatio;
+
+    await page.getByRole('button', { name: 'Fix with brush' }).click();
+    const surface = page.locator('canvas').first();
+    // The paint surface is taller than the viewport, so without this its top
+    // sits at a negative y and synthetic pointer events land outside the page.
+    await surface.scrollIntoViewIfNeeded();
+    const box = await surface.boundingBox();
+    expect(box).not.toBeNull();
+    if (!box) return;
+
+    // Paint across a transparent corner, so any change is from the brush.
+    await page.mouse.move(box.x + box.width * 0.12, box.y + box.height * 0.12);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.16, {
+      steps: 12,
+    });
+    await page.mouse.up();
+
+    const undo = page.getByRole('button', { name: 'Undo' });
+    await expect(undo).toBeEnabled({ timeout: 60_000 });
+    await expect
+      .poll(async () => (await alphaStats(page)).opaqueRatio, { timeout: 60_000 })
+      .toBeGreaterThan(before);
+
+    await undo.click();
+    await expect(undo).toBeDisabled({ timeout: 60_000 });
+    await expect
+      .poll(async () => (await alphaStats(page)).opaqueRatio, { timeout: 60_000 })
+      .toBeCloseTo(before, 3);
+  });
+
+  test('smart select pulls in a whole object with one click', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Model').selectOption('modnet');
+    await page.setInputFiles('input[type="file"]', FIXTURE);
+    await expect(page.getByRole('link', { name: 'Download PNG' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+      { timeout: 180_000 },
+    );
+
+    const before = (await alphaStats(page)).opaqueRatio;
+
+    await page.getByRole('button', { name: 'Fix with brush' }).click();
+    await page.getByRole('checkbox', { name: /Smart select/ }).check();
+
+    const surface = page.locator('canvas').first();
+    await surface.scrollIntoViewIfNeeded();
+    const box = await surface.boundingBox();
+    expect(box).not.toBeNull();
+    if (!box) return;
+
+    // The head, which MODNet leaves partly transparent on this fixture.
+    await page.mouse.click(box.x + box.width * 0.47, box.y + box.height * 0.27);
+
+    // Downloads SlimSAM (~17.5 MB) and encodes on first use.
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled({
+      timeout: 300_000,
+    });
+    await expect
+      .poll(async () => (await alphaStats(page)).opaqueRatio, { timeout: 60_000 })
+      .toBeGreaterThan(before);
+  });
+
   test('reports which backend is in use', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Model').selectOption('modnet');
