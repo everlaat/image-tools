@@ -25,7 +25,9 @@ export interface SessionInfo {
 export class MattingSession {
   private session: ort.InferenceSession | null;
   private readonly model: MattingModel;
-  readonly backend: BackendReport;
+  private currentBackend: BackendReport;
+  /** Only one fallback attempt per session, so a failure cannot loop. */
+  private fellBack = false;
 
   private constructor(
     model: MattingModel,
@@ -34,7 +36,11 @@ export class MattingSession {
   ) {
     this.model = model;
     this.session = session;
-    this.backend = backend;
+    this.currentBackend = backend;
+  }
+
+  get backend(): BackendReport {
+    return this.currentBackend;
   }
 
   static async load(
@@ -57,7 +63,7 @@ export class MattingSession {
   }
 
   get info(): SessionInfo {
-    return { modelId: this.model.id, backend: this.backend };
+    return { modelId: this.model.id, backend: this.currentBackend };
   }
 
   /** Inference resolution this session will use for a given source size. */
@@ -73,7 +79,53 @@ export class MattingSession {
    * inference resolution. Lifting it back to full size is the caller's job,
    * so this stays free of canvas dependencies.
    */
+  /**
+   * Runs the model, moving to WASM if WebGPU fails part-way through.
+   *
+   * A graph can exceed a device limit that is only discovered when shaders
+   * are compiled during the run — `maxStorageBuffersPerShaderStage` is the
+   * common one, and the session builds without complaint beforehand. There is
+   * no way to test for it up front, so the failure is caught and the work is
+   * redone on the CPU rather than handed to the user as a shader-compiler
+   * stack trace.
+   */
   async run(resized: Rgba): Promise<GrayMask> {
+    try {
+      return await this.runOnce(resized);
+    } catch (cause) {
+      if (!this.canFallBackToWasm()) throw cause;
+
+      await this.moveToWasm(describeFailure(cause));
+      return this.runOnce(resized);
+    }
+  }
+
+  private canFallBackToWasm(): boolean {
+    return shouldFallBackToWasm({
+      current: this.currentBackend.backend,
+      supported: this.model.backends,
+      alreadyFellBack: this.fellBack,
+    });
+  }
+
+  /** Rebuilds the session on the CPU backend. Weights come from the cache. */
+  private async moveToWasm(reason: string): Promise<void> {
+    this.fellBack = true;
+    const previous = this.session;
+    this.session = null;
+    void previous?.release();
+
+    const { session, backend } = await loadSession(
+      modelUrl(this.model),
+      this.model.downloadBytes,
+      { backends: ['wasm'], preferredBackend: 'wasm' },
+    );
+
+    this.session = session;
+    this.currentBackend = { ...backend, fallbackReason: reason };
+  }
+
+  private async runOnce(resized: Rgba): Promise<GrayMask> {
     const session = this.session;
     if (!session) throw new Error('This matting session has already been released');
 
@@ -118,4 +170,36 @@ export class MattingSession {
     this.session = null;
     void session?.release();
   }
+}
+
+/**
+ * Whether a failed run should be retried on the CPU.
+ *
+ * Any WebGPU failure is worth retrying, not just the known device-limit
+ * ones: the worst case is a slow but correct result instead of none. Only
+ * once per session, so a persistent fault cannot loop.
+ */
+export function shouldFallBackToWasm(state: {
+  readonly current: Backend;
+  readonly supported: readonly Backend[];
+  readonly alreadyFellBack: boolean;
+}): boolean {
+  return (
+    !state.alreadyFellBack &&
+    state.current === 'webgpu' &&
+    state.supported.includes('wasm')
+  );
+}
+
+/** A short, human-readable reason for the UI, not a stack trace. */
+export function describeFailure(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
+
+  if (/maxStorageBuffersPerShaderStage|Too many storage buffers/i.test(message)) {
+    return 'This GPU allows too few storage buffers per shader for this model.';
+  }
+  if (/bad_alloc|out of memory|OOM/i.test(message)) {
+    return 'The GPU ran out of memory for this model.';
+  }
+  return 'This model failed to run on the GPU.';
 }

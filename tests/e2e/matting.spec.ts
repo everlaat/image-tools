@@ -135,6 +135,39 @@ test.describe('background removal', () => {
       .toBeCloseTo(before, 3);
   });
 
+  test('the paint surface does not start a native image drag', async ({ page }) => {
+    // Regression: the cutout <img> is draggable by default, so a real
+    // press-and-drag started an HTML5 image drag and no stroke was ever
+    // painted. Synthetic pointer events do not trigger native drag, which is
+    // why the painting test passed while the feature was unusable.
+    await page.goto('/');
+    await page.getByLabel('Model').selectOption('modnet');
+    await page.setInputFiles('input[type="file"]', FIXTURE);
+    await expect(page.getByRole('link', { name: 'Download PNG' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+      { timeout: 180_000 },
+    );
+    await page.getByRole('button', { name: 'Fix with brush' }).click();
+
+    const image = page.getByRole('img', { name: /Cutout being corrected/ });
+    await expect(image).toHaveJSProperty('draggable', false);
+
+    // The image must not swallow the pointer stream either.
+    await expect(image).toHaveCSS('pointer-events', 'none');
+
+    // A dragstart anywhere on the surface has to be cancelled.
+    const prevented = await page.evaluate(() => {
+      const canvas = document.querySelector('canvas');
+      const surface = canvas?.parentElement;
+      if (!surface) throw new Error('no paint surface');
+      const event = new DragEvent('dragstart', { bubbles: true, cancelable: true });
+      surface.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(prevented).toBe(true);
+  });
+
   test('smart select pulls in a whole object with one click', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Model').selectOption('modnet');

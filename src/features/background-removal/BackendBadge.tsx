@@ -10,7 +10,8 @@ export interface BackendBadgeProps {
  * cross-origin isolation gets lost behind proxies.
  */
 export function BackendBadge({ session }: BackendBadgeProps) {
-  const { backend, webgpu, wasmThreads, crossOriginIsolated } = session.backend;
+  const { backend, webgpu, wasmThreads, crossOriginIsolated, fallbackReason } =
+    session.backend;
   const onGpu = backend === 'webgpu';
 
   return (
@@ -27,7 +28,13 @@ export function BackendBadge({ session }: BackendBadgeProps) {
         </span>
       </p>
 
-      {!onGpu && !webgpu.available && (
+      {fallbackReason !== undefined && (
+        <p className="text-xs text-ink-muted">
+          {fallbackReason} Switched to the CPU so it still works, which is slower.
+        </p>
+      )}
+
+      {!onGpu && fallbackReason === undefined && !webgpu.available && (
         <p className="text-xs text-ink-muted">{webgpu.reason}</p>
       )}
 

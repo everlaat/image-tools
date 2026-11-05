@@ -50,7 +50,12 @@ export function SelectionCanvas({
         addFromEvent(event.clientX, event.clientY, false);
       }}
     >
-      <img src={imageUrl} alt="" className="h-full w-full object-contain" />
+      <img
+        src={imageUrl}
+        alt=""
+        draggable={false}
+        className="pointer-events-none h-full w-full object-contain select-none"
+      />
 
       <button
         type="button"

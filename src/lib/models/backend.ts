@@ -7,6 +7,11 @@ import type { Backend } from './registry.ts';
  */
 export interface BackendReport {
   readonly backend: Backend;
+  /**
+   * Set when WebGPU was chosen, failed during inference and the work was
+   * moved to WASM. The UI says so rather than silently running slower.
+   */
+  readonly fallbackReason?: string;
   readonly webgpu: WebGpuProbe;
   /** WASM threads in use. 1 means the page is not cross-origin isolated. */
   readonly wasmThreads: number;
@@ -25,6 +30,15 @@ export interface AdapterLimits {
   readonly maxStorageBufferBindingSize: number;
   readonly maxBufferSize: number;
   readonly maxComputeWorkgroupStorageSize: number;
+  /**
+   * How many storage buffers one shader stage may bind. Distinct from the
+   * size limit above, and the one that actually bites: a graph needing 11 on
+   * a device allowing 10 builds a session fine and then fails inside
+   * OrtRun. There is no way to know a model's requirement up front, so this
+   * is reported for diagnosis while the real safety net is the runtime
+   * fallback in MattingSession.
+   */
+  readonly maxStorageBuffersPerShaderStage: number;
 }
 
 /**
@@ -95,6 +109,7 @@ export async function probeWebGpu(): Promise<WebGpuProbe> {
     maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
     maxBufferSize: adapter.limits.maxBufferSize,
     maxComputeWorkgroupStorageSize: adapter.limits.maxComputeWorkgroupStorageSize,
+    maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage,
   };
 
   if (limits.maxStorageBufferBindingSize < MIN_USEFUL_STORAGE_BUFFER) {

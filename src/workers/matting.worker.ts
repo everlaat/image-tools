@@ -33,6 +33,11 @@ import type { GrayMask, Rgba } from '../lib/image/pixels.ts';
 export interface SegmentResult {
   readonly width: number;
   readonly height: number;
+  /**
+   * Reported again after inference, because the backend can change during
+   * the run: WebGPU may fail on a device limit and the work move to WASM.
+   */
+  readonly session: SessionInfo;
   /** Set when the source exceeded the working size cap and was scaled down. */
   readonly downscaledFrom?: { readonly width: number; readonly height: number };
 }
@@ -100,6 +105,7 @@ class MattingWorker {
     return {
       width: decoded.image.width,
       height: decoded.image.height,
+      session: session.info,
       ...(decoded.downscaled
         ? {
             downscaledFrom: {

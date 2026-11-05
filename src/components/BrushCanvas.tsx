@@ -92,9 +92,15 @@ export function BrushCanvas({
   return (
     <div
       ref={surfaceRef}
-      className={`relative touch-none overflow-hidden rounded-lg border border-border-subtle ${
+      className={`relative touch-none select-none overflow-hidden rounded-lg border border-border-subtle ${
         background === null ? 'alpha-grid' : ''
       }`}
+      // Without this a press-and-drag starts the browser's native image drag
+      // and the stroke never happens. draggable={false} on the <img> covers
+      // most of it; this catches the drag starting from any other child.
+      onDragStart={(event) => {
+        event.preventDefault();
+      }}
       style={{
         aspectRatio: `${width} / ${height}`,
         ...(background === null ? {} : { backgroundColor: background }),
@@ -102,6 +108,9 @@ export function BrushCanvas({
       }}
       onPointerDown={(event) => {
         if (disabled) return;
+        // Suppress the default press behaviour (image drag, selection) so the
+        // pointer stream belongs to the brush.
+        event.preventDefault();
         const point = toImage(event.clientX, event.clientY);
         if (!point) return;
 
@@ -133,7 +142,8 @@ export function BrushCanvas({
       <img
         src={imageUrl}
         alt="Cutout being corrected"
-        className="h-full w-full object-contain"
+        draggable={false}
+        className="pointer-events-none h-full w-full object-contain select-none"
       />
 
       <canvas

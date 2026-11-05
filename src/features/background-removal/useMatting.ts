@@ -122,7 +122,13 @@ export function useMatting(modelId: MattingModelId, preferredBackend?: Backend) 
 
         const result = await worker.segment(file);
         if (runId !== runIdRef.current) return;
-        setState((prev) => ({ ...prev, result, status: 'composing' }));
+        // The backend may have changed mid-run, so take the fresher report.
+        setState((prev) => ({
+          ...prev,
+          result,
+          session: result.session,
+          status: 'composing',
+        }));
 
         const blob = await worker.compose(refinement);
         if (runId !== runIdRef.current) return;
