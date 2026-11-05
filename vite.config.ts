@@ -22,13 +22,16 @@ export default defineConfig({
   preview: { headers: crossOriginIsolation },
   worker: { format: 'es' },
   optimizeDeps: {
-    // transformers.js ships prebuilt ESM + .wasm assets; pre-bundling it
-    // rewrites the worker/wasm URLs and breaks the ORT backend.
-    exclude: ['@huggingface/transformers'],
+    // onnxruntime-web points at its .wasm with `new URL(..., import.meta.url)`.
+    // Pre-bundling rewrites that reference and the runtime then falls back to a
+    // public CDN, so it has to stay out of the esbuild pass.
+    exclude: ['onnxruntime-web'],
   },
   build: { target: 'es2022' },
   test: {
-    environment: 'jsdom',
+    // The unit suite covers pure pixel/registry logic; DOM behaviour is
+    // covered by the Playwright suite against a real browser instead.
+    environment: 'node',
     include: ['tests/unit/**/*.test.ts'],
     coverage: { provider: 'v8', include: ['src/lib/**'] },
   },
