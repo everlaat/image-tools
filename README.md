@@ -263,6 +263,9 @@ service worker detects the page is already isolated and does nothing.
   but that software adapter lacks `shader-f16`, so it cannot run the fp16 models either.
   The WebGPU path needs a manual check on real hardware.
 - **No cancel button yet** for an in-flight model download.
+- **Vectorising is for flat artwork, as the tool name says.** Quantise-then-trace
+  posterises a photograph or a gradient into flat bands by construction. Tested on an
+  87,000-colour gradient it produces 16 clean paths in 89 ms — correct, but banded.
 - **Vectorising ignores transparency.** Alpha is not currently used to exclude regions,
   so a logo on a transparent background traces that background as a shape. Compositing
   onto a chosen colour, or dropping the background path, is the obvious next step.
