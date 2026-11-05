@@ -172,8 +172,12 @@ required; all four target browsers have them.
 
 ### GitHub Pages
 
-`.github/workflows/deploy.yml` builds and publishes on every push to `master`. Enable it
-once under **Settings → Pages → Source → GitHub Actions**; the workflow needs no secrets.
+`.github/workflows/deploy.yml` builds and publishes on every push to `master`.
+
+**One manual step is required first:** go to **Settings → Pages** and set **Source** to
+**GitHub Actions**. This cannot be automated — creating a Pages site is not permitted to
+the default `GITHUB_TOKEN`, which fails with *Resource not accessible by integration*.
+After that the workflow needs no secrets and no further setup.
 
 Two things make this work on a host that cannot set response headers:
 

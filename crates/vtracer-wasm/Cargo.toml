@@ -1,0 +1,31 @@
+[package]
+name = "vtracer-wasm"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Browser bindings for vtracer, exposed to the image-tools web app"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+vtracer = "0.6.5"
+visioncortex = "0.8"
+
+[profile.release]
+# Vectorising is CPU-bound, so optimise for speed, but keep the payload small:
+# fat LTO and a single codegen unit shave a good chunk off the .wasm.
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+# No `strip`: it drops the target_features section wasm-bindgen reads.
+
+[package.metadata.wasm-pack.profile.release]
+# wasm-opt downloads a binaryen release at build time, which makes the build
+# depend on network access and differ between machines. rustc already applies
+# opt-level 3 and fat LTO, and the result is ~140 KB, so the extra pass is not
+# worth the fragility.
+wasm-opt = false

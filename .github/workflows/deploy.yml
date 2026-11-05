@@ -42,11 +42,11 @@ jobs:
           # GitHub Pages serves project sites from /<repo>/.
           BASE_PATH: /${{ github.event.repository.name }}/
 
-      # enablement turns Pages on for the repo if it is not already, so the
-      # first deploy does not need anyone to visit Settings first.
+      # Pages must already be enabled with "GitHub Actions" as the source.
+      # The enablement input cannot do it: creating a Pages site is not
+      # permitted to the default workflow token ("Resource not accessible by
+      # integration"), so it is a one-off manual step in Settings.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v5
         with:
