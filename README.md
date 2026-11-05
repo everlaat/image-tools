@@ -6,8 +6,9 @@ uploaded and there is no inference server.
 
 **Live: <https://everlaat.github.io/image-tools/>**
 
-> **Status:** Phase 1 (background removal) and Phase 2 (logo → SVG) are implemented.
-> Phase 3 is described in [Roadmap](#roadmap).
+> **Status:** all three phases are implemented — background removal, logo → SVG, and
+> layer splitting. Inpainting remains a deliberately unshipped stretch goal; see
+> [Roadmap](#roadmap).
 
 ## Setup
 
@@ -45,6 +46,7 @@ src/
   features/
     background-removal/   Phase 1: hook, model picker, backend badge
     vectorize/            Phase 2: hook, live SVG preview, trace settings
+    layers/               Phase 3: click-to-select canvas, layer panel
   lib/
     models/
       registry.ts         ← every model lives here: id, URL, size, I/O names, licence
@@ -54,9 +56,12 @@ src/
     image/                decode, resample, tensor conversion, mask maths, PNG encode
     color/quantise.ts     median cut + k-means palette reduction
     vector/options.ts     tracing settings, kept free of the wasm import
+    image/sam.ts          Segment Anything coordinate transforms
+    layers/depth.ts       depth normalisation and band slicing
   workers/
     matting.worker.ts     inference and pixel work, exposed over Comlink
     vectorize.worker.ts   quantise + trace, exposed over Comlink
+    layers.worker.ts      SAM encode/decode, depth, layer export and ZIP
 crates/
   vtracer-wasm/           Rust bindings around vtracer, built to WebAssembly
 ```
@@ -201,6 +206,54 @@ either. The result is 172 kB of wasm (59 kB gzipped).
 build depend on network access and differ between machines. rustc already applies
 `opt-level = 3` and fat LTO.
 
+## Layer splitting (Phase 3)
+
+**Click to select.** SlimSAM runs in two stages, and the split matters: the encoder
+costs about 3 seconds but depends only on the image, so it runs once and its embeddings
+are cached. Each click then runs only the decoder, at roughly 0.4 s — which is what
+makes clicking feel interactive rather than a round trip per point. Positive clicks add
+to a selection, alt-click (or right click) excludes an area. SAM proposes three masks
+per click; the one it scores highest is kept.
+
+**Depth suggestions.** Depth Anything V2 Small produces a relative depth map, which is
+sliced into foreground / midground / background. Band edges are feathered across a small
+depth margin so neighbouring layers overlap slightly rather than leaving a seam when
+recomposited.
+
+**Layer panel.** Toggle visibility, reorder, export one layer as a transparent PNG, or
+export all visible layers as a ZIP (via fflate, stored rather than deflated — PNGs are
+already compressed). Reordering uses buttons rather than drag-and-drop: drag needs a
+keyboard equivalent anyway, and labelled buttons _are_ that equivalent without a second
+interaction model to maintain.
+
+### Variant choices, measured
+
+Same approach as Phase 1 — each export benchmarked in a browser on WASM at its real
+input size, warm:
+
+| Model       | Variant  | Size        | Warm run   |
+| ----------- | -------- | ----------- | ---------- |
+| SAM encoder | fp16     | 12.2 MB     | 4.3 s      |
+| SAM encoder | **int8** | **8.9 MB**  | **3.1 s**  |
+| SAM decoder | **fp16** | **8.6 MB**  | **0.37 s** |
+| SAM decoder | int8     | 4.9 MB      | 0.70 s     |
+| Depth       | **int8** | **27.3 MB** | **1.46 s** |
+| Depth       | q4f16    | 19.1 MB     | 1.9 s      |
+| Depth       | fp16     | 49.6 MB     | 2.1 s      |
+
+Quantising the encoder makes it both smaller _and_ faster. Quantising the decoder makes
+it **slower**, and the decoder is the one that runs on every click — so the lineup is
+int8 encoder, fp16 decoder, int8 depth.
+
+### Still onnxruntime-web, not transformers.js
+
+These exports do use conventional tensor names, so transformers.js would have worked.
+It was still not worth it: transformers.js pins its own `onnxruntime-web`, so adding it
+would ship a **second 28 MB WASM runtime** alongside the one already here. The only real
+work it would have saved is SAM's resize-and-pad coordinate transform, which is about
+forty lines and is now covered by unit tests plus an end-to-end check that a mask's
+centroid lands within 0.4% of where the click was.
+
 ## Accessibility
 
 Keyboard operable throughout, with a visible focus ring on every interactive element. The
@@ -265,6 +318,12 @@ service worker detects the page is already isolated and does nothing.
   but that software adapter lacks `shader-f16`, so it cannot run the fp16 models either.
   The WebGPU path needs a manual check on real hardware.
 - **No cancel button yet** for an in-flight model download.
+- **SAM is weak on flat synthetic artwork.** It is trained on photographs, so on
+  vector-like test images it tends to select a small region around the click. On photos
+  it behaves as expected. The coordinate transform is verified independently of this.
+- **Depth bands are fixed thirds.** Depth Anything emits relative depth with no absolute
+  scale, so the thresholds are fractions of the observed range rather than anything
+  scene-aware; they are not yet user-adjustable.
 - **Vectorising is for flat artwork, as the tool name says.** Quantise-then-trace
   posterises a photograph or a gradient into flat bands by construction. Tested on an
   87,000-colour gradient it produces 16 clean paths in 89 ms — correct, but banded.
