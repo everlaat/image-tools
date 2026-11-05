@@ -25,6 +25,6 @@ export const TOOLS: readonly [ToolDescriptor, ...ToolDescriptor[]] = [
     id: 'layers',
     label: 'Split layers',
     description: 'Separate an image into foreground, midground and background layers.',
-    available: false,
+    available: true,
   },
 ];
