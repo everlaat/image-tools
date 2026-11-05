@@ -60,6 +60,15 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
 
+  // Shipped as-is to the browser and runs in a service worker scope.
+  {
+    files: ['public/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { ...globals.serviceworker },
+    },
+  },
+
   // Config files and other plain JS: no type information available.
   {
     files: ['**/*.js'],

@@ -4,19 +4,26 @@ import tailwindcss from '@tailwindcss/vite';
 
 /**
  * Cross-origin isolation lets onnxruntime-web use SharedArrayBuffer for
- * multi-threaded WASM. `credentialless` is used rather than `require-corp` so
- * that cross-origin model downloads (Hugging Face) keep working without the
- * remote host having to send CORP headers.
+ * multi-threaded WASM.
+ *
+ * `require-corp` rather than `credentialless`: model weights are fetched with
+ * a CORS-mode `fetch()` and Hugging Face returns the right CORS headers, so
+ * require-corp does not block them (verified against the live host). It also
+ * works in Safari, which does not support credentialless at all.
  *
  * Any production host must send the same two headers or the WASM backend
- * silently drops to a single thread. See README "Deployment".
+ * drops to a single thread. Static hosts that cannot set headers — GitHub
+ * Pages among them — get them from public/coi-serviceworker.js instead.
  */
 const crossOriginIsolation = {
   'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'credentialless',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
 export default defineConfig({
+  // GitHub Pages serves the site from /<repo>/, so the base has to match.
+  // Set BASE_PATH in CI; local builds stay at the root.
+  base: process.env.BASE_PATH ?? '/',
   plugins: [react(), tailwindcss()],
   server: { headers: crossOriginIsolation },
   preview: { headers: crossOriginIsolation },

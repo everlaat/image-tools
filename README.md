@@ -77,12 +77,16 @@ and preview servers send:
 
 ```
 Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: credentialless
+Cross-Origin-Embedder-Policy: require-corp
 ```
 
-`credentialless` rather than `require-corp` so that cross-origin model downloads keep
-working without Hugging Face having to send CORP headers. **Any production host must send
-these two headers**, or the WASM backend silently drops to a single thread.
+`require-corp` rather than `credentialless`: model weights are fetched with a CORS-mode
+`fetch()` and Hugging Face returns the right CORS headers, so require-corp does not block
+them — verified against the live host. It also works in Safari, which does not support
+`credentialless` at all.
+
+**Any host must send these two headers**, or the WASM backend drops to a single thread.
+Hosts that cannot set headers are covered below.
 
 ### Model storage
 
@@ -163,6 +167,36 @@ Current Chrome, Edge, Safari and Firefox. WebGPU is used where available — tod
 mainly Chrome and Edge — and WASM is used everywhere else, so Firefox and Safari work,
 just more slowly. `OffscreenCanvas`, Web Workers with ES modules, and the Cache API are
 required; all four target browsers have them.
+
+## Deployment
+
+### GitHub Pages
+
+`.github/workflows/deploy.yml` builds and publishes on every push to `master`. Enable it
+once under **Settings → Pages → Source → GitHub Actions**; the workflow needs no secrets.
+
+Two things make this work on a host that cannot set response headers:
+
+- **Base path.** Project sites are served from `/<repo>/`, so the build sets Vite's `base`
+  from `BASE_PATH`, which the workflow derives from the repository name.
+- **`public/coi-serviceworker.js`.** GitHub Pages cannot send COOP/COEP, and without them
+  there is no `SharedArrayBuffer` and the WASM backend is stuck on one thread. A small
+  service worker re-serves same-origin responses with those headers; the first visit
+  registers it and reloads once. Cross-origin requests pass through untouched — model
+  weights come over CORS, which satisfies `require-corp` by itself, so there is no reason
+  to rewrite someone else's response.
+
+Verified against a plain static server with no headers at all: the page reports
+`crossOriginIsolated: true`, gets 3 WASM threads, downloads the model from Hugging Face
+and produces a correct full-resolution cutout.
+
+If the service worker is unavailable — blocked, or storage denied — the app still works;
+the WASM backend just runs single-threaded and the badge says so.
+
+### Anywhere else
+
+Any static host works. Set the two headers above directly if you can, in which case the
+service worker detects the page is already isolated and does nothing.
 
 ## Known limitations
 

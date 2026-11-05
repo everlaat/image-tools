@@ -10,6 +10,43 @@
     />
   </head>
   <body class="h-full">
+    <script>
+      /*
+       * Registers the cross-origin isolation worker as early as possible.
+       *
+       * On a host that already sends COOP/COEP this does nothing. On a static
+       * host like GitHub Pages the first visit registers the worker and reloads
+       * once, so the document itself is served through it and the page becomes
+       * cross-origin isolated. The relative path means this works whatever
+       * sub-path the site is deployed under.
+       */
+      (function () {
+        var KEY = 'coi-reload-attempted';
+        try {
+          if (window.crossOriginIsolated) {
+            sessionStorage.removeItem(KEY);
+            return;
+          }
+          if (!window.isSecureContext || !('serviceWorker' in navigator)) return;
+          if (sessionStorage.getItem(KEY)) return; // never loop on reload
+
+          navigator.serviceWorker
+            .register('coi-serviceworker.js', { scope: './' })
+            .then(function () {
+              if (navigator.serviceWorker.controller) return;
+              return navigator.serviceWorker.ready.then(function () {
+                sessionStorage.setItem(KEY, '1');
+                window.location.reload();
+              });
+            })
+            .catch(function () {
+              /* Isolation is an optimisation; carry on without it. */
+            });
+        } catch (e) {
+          /* Storage blocked: skip isolation rather than fail to boot. */
+        }
+      })();
+    </script>
     <div id="root" class="h-full"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
