@@ -4,6 +4,8 @@ Background removal, logo vectorising and layer splitting that run **entirely in 
 browser**. Images are decoded, segmented and encoded on your own device; nothing is
 uploaded and there is no inference server.
 
+**Live: <https://everlaat.github.io/image-tools/>**
+
 > **Status:** Phase 1 (background removal) and Phase 2 (logo → SVG) are implemented.
 > Phase 3 is described in [Roadmap](#roadmap).
 
