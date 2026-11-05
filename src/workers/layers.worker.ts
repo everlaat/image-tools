@@ -141,7 +141,12 @@ class LayersWorker {
 
   /** Small preview of a single layer for the panel. */
   async thumbnail(id: string, maxEdge: number): Promise<Blob> {
-    const composed = this.composeLayer(id, { threshold: 0.5, hardness: 0, feather: 0 });
+    const composed = this.composeLayer(id, {
+      edgeAlign: 0,
+      threshold: 0.5,
+      hardness: 0,
+      feather: 0,
+    });
     const scale = maxEdge / Math.max(composed.width, composed.height);
     if (scale >= 1) return rgbaToPng(composed);
 

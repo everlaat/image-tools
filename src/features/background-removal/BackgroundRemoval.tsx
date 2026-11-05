@@ -188,6 +188,20 @@ export function BackgroundRemoval() {
             <legend className="mb-1 text-sm font-medium">Edge refinement</legend>
 
             <RangeField
+              label="Align to image edges"
+              value={refinement.edgeAlign}
+              min={0}
+              max={1}
+              step={0.05}
+              disabled={!state.result}
+              format={(v) => (v === 0 ? 'off' : v.toFixed(2))}
+              onChange={(edgeAlign) => {
+                setRefinement((prev) => ({ ...prev, edgeAlign }));
+              }}
+              hint="Re-fits the mask to the real edges in the photo. The biggest win on hair and fine detail."
+            />
+
+            <RangeField
               label="Threshold"
               value={refinement.threshold}
               min={0}

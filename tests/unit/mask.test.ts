@@ -60,6 +60,7 @@ describe('refineMask', () => {
 
   it('binarises at full hardness', () => {
     const out = refineMask(mask([0.2, 0.49, 0.51, 0.9], 4, 1), {
+      edgeAlign: 0,
       threshold: 0.5,
       hardness: 1,
       feather: 0,
@@ -70,11 +71,13 @@ describe('refineMask', () => {
   it('moves the cut point with the threshold', () => {
     const values = [0.3, 0.7];
     const low = refineMask(mask(values, 2, 1), {
+      edgeAlign: 0,
       threshold: 0.2,
       hardness: 1,
       feather: 0,
     });
     const high = refineMask(mask(values, 2, 1), {
+      edgeAlign: 0,
       threshold: 0.8,
       hardness: 1,
       feather: 0,
@@ -86,6 +89,7 @@ describe('refineMask', () => {
 
   it('keeps a soft ramp monotonic when hardness is partial', () => {
     const out = refineMask(mask([0, 0.25, 0.5, 0.75, 1], 5, 1), {
+      edgeAlign: 0,
       threshold: 0.5,
       hardness: 0.5,
       feather: 0,
@@ -99,6 +103,7 @@ describe('refineMask', () => {
   it('feathering softens a hard edge without moving it', () => {
     const hard = new Array(16).fill(0).map((_, i) => (i % 4 < 2 ? 1 : 0));
     const out = refineMask(mask(hard, 4, 4), {
+      edgeAlign: 0,
       threshold: 0.5,
       hardness: 0,
       feather: 1,
@@ -111,6 +116,7 @@ describe('refineMask', () => {
 
   it('preserves a fully opaque mask under feathering', () => {
     const out = refineMask(mask(new Array(25).fill(1), 5, 5), {
+      edgeAlign: 0,
       threshold: 0.5,
       hardness: 0,
       feather: 2,

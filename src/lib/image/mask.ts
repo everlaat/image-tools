@@ -10,6 +10,12 @@ import { clamp01, type GrayMask, type Rgba } from './pixels.ts';
  * the remap produced rather than being erased by it.
  */
 export interface EdgeRefinement {
+  /**
+   * How strongly the mask is re-fitted to the image's own edges before
+   * anything else. Applied by the worker rather than `refineMask`, because
+   * it needs the source image as a guide. 0 disables it.
+   */
+  readonly edgeAlign: number;
   /** Alpha midpoint. Raise to trim halo, lower to keep more of the edge. */
   readonly threshold: number;
   /** How abruptly alpha crosses the threshold. 0 leaves the ramp alone, 1 is binary. */
@@ -19,6 +25,9 @@ export interface EdgeRefinement {
 }
 
 export const DEFAULT_REFINEMENT: EdgeRefinement = {
+  // On by default: every model's mask is computed below full resolution, so
+  // there is always an upscaled edge worth re-fitting.
+  edgeAlign: 0.7,
   threshold: 0.5,
   hardness: 0,
   feather: 0,
