@@ -1,22 +1,24 @@
-import { TOOLS, type ToolId } from './tools.ts';
 import { useState } from 'react';
+import { BackgroundRemoval } from '../features/background-removal/BackgroundRemoval.tsx';
+import { ModelCacheSettings } from '../components/ModelCacheSettings.tsx';
+import { TOOLS, type ToolId } from './tools.ts';
 
 export function App() {
   const [active, setActive] = useState<ToolId>('background-removal');
-  const activeTool = TOOLS.find((t) => t.id === active) ?? TOOLS[0];
+  const activeTool = TOOLS.find((tool) => tool.id === active) ?? TOOLS[0];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-full flex-col">
       <header className="border-b border-border-subtle px-4 py-3">
-        <div className="mx-auto flex max-w-6xl items-center gap-4">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="text-base font-semibold tracking-tight">Image Tools</h1>
-          <p className="hidden text-sm text-ink-muted sm:block">
+          <p className="text-sm text-ink-muted">
             Runs entirely on your device — no uploads.
           </p>
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 p-4">
         <nav aria-label="Tools">
           <ul className="flex flex-wrap gap-2">
             {TOOLS.map((tool) => {
@@ -45,8 +47,16 @@ export function App() {
 
         <main className="flex-1">
           <h2 className="sr-only">{activeTool.label}</h2>
-          <p className="text-sm text-ink-muted">{activeTool.description}</p>
+          {activeTool.id === 'background-removal' ? (
+            <BackgroundRemoval />
+          ) : (
+            <p className="text-sm text-ink-muted">{activeTool.description}</p>
+          )}
         </main>
+
+        <footer className="border-t border-border-subtle pt-3">
+          <ModelCacheSettings />
+        </footer>
       </div>
     </div>
   );
