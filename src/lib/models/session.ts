@@ -1,6 +1,7 @@
 import * as ort from 'onnxruntime-web/webgpu';
-import { executionProviders, selectBackend, type BackendReport } from './backend.ts';
-import { fetchModelWeights, type ProgressListener } from './cache.ts';
+import type { BackendReport } from './backend.ts';
+import type { ProgressListener } from './cache.ts';
+import { loadSession } from './runtime.ts';
 import {
   modelUrl,
   resolveInputSize,
@@ -44,22 +45,12 @@ export class MattingSession {
       readonly signal?: AbortSignal;
     } = {},
   ): Promise<MattingSession> {
-    const backend = await selectBackend(
-      model.backends,
-      model.requiresGpuFeatures ?? [],
-      options.preferredBackend,
-    );
-
-    const weights = await fetchModelWeights(
-      modelUrl(model),
-      model.downloadBytes,
-      options.onProgress,
-      options.signal,
-    );
-
-    const session = await ort.InferenceSession.create(weights, {
-      executionProviders: [...executionProviders(backend.backend)],
-      graphOptimizationLevel: 'all',
+    const { session, backend } = await loadSession(modelUrl(model), model.downloadBytes, {
+      backends: model.backends,
+      requiredGpuFeatures: model.requiresGpuFeatures ?? [],
+      ...(options.preferredBackend ? { preferredBackend: options.preferredBackend } : {}),
+      ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
 
     return new MattingSession(model, session, backend);

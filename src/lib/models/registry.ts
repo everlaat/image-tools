@@ -10,7 +10,7 @@
 
 export type Backend = 'webgpu' | 'wasm';
 
-export type ModelTask = 'matting';
+export type ModelTask = 'matting' | 'segmentation' | 'depth';
 
 export interface Licence {
   readonly id: string;
@@ -195,4 +195,95 @@ export function resolveInputSize(
     width: round(source.width * scale),
     height: round(source.height * scale),
   };
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 3: segmentation and depth
+ *
+ * Variants were chosen by measuring each export in a browser on the WASM
+ * backend at its real input size, warm (second run):
+ *
+ *   SAM encoder  fp16       12.2 MB  4.3 s     quantised  8.9 MB  3.1 s
+ *   SAM decoder  fp16        8.6 MB  0.37 s    quantised  4.9 MB  0.70 s
+ *   Depth        quantised  27.3 MB  1.46 s    q4f16     19.1 MB  1.9 s
+ *                fp16       49.6 MB  2.1 s
+ *
+ * So: quantised encoder (smaller and faster), fp16 decoder (quantising it
+ * makes it slower, and the decoder is the one that runs on every click), and
+ * quantised depth.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Segment Anything runs in two stages. The encoder is slow but runs once per
+ * image; the decoder runs on every click, so its latency is what the
+ * interaction actually feels like.
+ */
+export interface SegmentationModel {
+  readonly id: 'slimsam';
+  readonly task: 'segmentation';
+  readonly label: string;
+  readonly repo: string;
+  readonly encoder: { readonly file: string; readonly downloadBytes: number };
+  readonly decoder: { readonly file: string; readonly downloadBytes: number };
+  /** Longest edge the image is resized to before padding to a square. */
+  readonly longestEdge: number;
+  /** Side of the square mask the decoder emits. */
+  readonly maskSize: number;
+  readonly normalisation: Normalisation;
+  readonly backends: readonly Backend[];
+  readonly licence: Licence;
+}
+
+export const SEGMENTATION_MODEL: SegmentationModel = {
+  id: 'slimsam',
+  task: 'segmentation',
+  label: 'SlimSAM',
+  repo: 'Xenova/slimsam-77-uniform',
+  encoder: { file: 'onnx/vision_encoder_quantized.onnx', downloadBytes: 8_922_031 },
+  decoder: {
+    file: 'onnx/prompt_encoder_mask_decoder_fp16.onnx',
+    downloadBytes: 8_566_431,
+  },
+  longestEdge: 1024,
+  maskSize: 256,
+  normalisation: IMAGENET,
+  backends: ['webgpu', 'wasm'],
+  licence: LICENCES.apache2,
+};
+
+export interface DepthModel {
+  readonly id: 'depth-anything-v2-small';
+  readonly task: 'depth';
+  readonly label: string;
+  readonly repo: string;
+  readonly file: string;
+  readonly downloadBytes: number;
+  readonly io: { readonly input: string; readonly output: string };
+  readonly input: InputSpec;
+  readonly normalisation: Normalisation;
+  readonly backends: readonly Backend[];
+  readonly licence: Licence;
+}
+
+export const DEPTH_MODEL: DepthModel = {
+  id: 'depth-anything-v2-small',
+  task: 'depth',
+  label: 'Depth Anything V2 Small',
+  repo: 'onnx-community/depth-anything-v2-small',
+  file: 'onnx/model_quantized.onnx',
+  downloadBytes: 27_277_217,
+  io: { input: 'pixel_values', output: 'predicted_depth' },
+  // Patch size 14, so both edges must be a multiple of it or the graph
+  // silently crops. Only the Small variant is Apache-2.0; Base and larger
+  // are CC-BY-NC and are deliberately not offered.
+  input: { kind: 'dynamic', target: 518, multipleOf: 14 },
+  normalisation: IMAGENET,
+  backends: ['webgpu', 'wasm'],
+  licence: LICENCES.apache2,
+};
+
+/** Absolute URL for any repo-relative model file. */
+export function fileUrl(repo: string, file: string, host: string = MODEL_HOST): string {
+  const base = host.endsWith('/') ? host.slice(0, -1) : host;
+  return `${base}/${repo}/resolve/main/${file}`;
 }
