@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { clearModelCache, modelCacheUsage, type CacheUsage } from '../lib/models/cache.ts';
+import {
+  clearModelCache,
+  modelCacheUsage,
+  type CacheUsage,
+} from '../lib/models/cache.ts';
 import { formatBytes } from '../lib/format.ts';
 
 /**

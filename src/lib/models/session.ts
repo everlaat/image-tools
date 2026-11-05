@@ -1,7 +1,12 @@
 import * as ort from 'onnxruntime-web/webgpu';
 import { executionProviders, selectBackend, type BackendReport } from './backend.ts';
 import { fetchModelWeights, type ProgressListener } from './cache.ts';
-import { modelUrl, resolveInputSize, type Backend, type MattingModel } from './registry.ts';
+import {
+  modelUrl,
+  resolveInputSize,
+  type Backend,
+  type MattingModel,
+} from './registry.ts';
 import { fromModelOutput } from '../image/tensor.ts';
 import type { GrayMask, Rgba } from '../image/pixels.ts';
 import { toNchwFloat32 } from '../image/tensor.ts';
@@ -39,7 +44,11 @@ export class MattingSession {
       readonly signal?: AbortSignal;
     } = {},
   ): Promise<MattingSession> {
-    const backend = await selectBackend(model.backends, options.preferredBackend);
+    const backend = await selectBackend(
+      model.backends,
+      model.requiresGpuFeatures ?? [],
+      options.preferredBackend,
+    );
 
     const weights = await fetchModelWeights(
       modelUrl(model),

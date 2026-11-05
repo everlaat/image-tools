@@ -121,9 +121,10 @@ async function readWithProgress(
         total: Math.max(total, loaded),
         fromCache: false,
       });
-      if (signal?.aborted) throw signal.reason instanceof Error
-        ? signal.reason
-        : new Error('Model download cancelled');
+      if (signal?.aborted)
+        throw signal.reason instanceof Error
+          ? signal.reason
+          : new Error('Model download cancelled');
     }
   } finally {
     reader.releaseLock();

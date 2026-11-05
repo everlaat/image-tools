@@ -2,10 +2,7 @@
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   const units = ['B', 'kB', 'MB', 'GB'];
-  const exponent = Math.min(
-    units.length - 1,
-    Math.floor(Math.log10(bytes) / 3),
-  );
+  const exponent = Math.min(units.length - 1, Math.floor(Math.log10(bytes) / 3));
   const value = bytes / 1000 ** exponent;
   const unit = units[exponent] ?? 'B';
   return `${value.toFixed(exponent === 0 ? 0 : 1)} ${unit}`;

@@ -14,7 +14,11 @@ export interface BackendReport {
 }
 
 export type WebGpuProbe =
-  | { readonly available: true; readonly limits: AdapterLimits }
+  | {
+      readonly available: true;
+      readonly limits: AdapterLimits;
+      readonly features: ReadonlySet<string>;
+    }
   | { readonly available: false; readonly reason: string };
 
 export interface AdapterLimits {
@@ -103,25 +107,58 @@ export async function probeWebGpu(): Promise<WebGpuProbe> {
     };
   }
 
-  return { available: true, limits };
+  return { available: true, limits, features: new Set(adapter.features) };
 }
 
 /**
- * Decides which execution provider to use, honouring the model's own list of
- * supported backends and an optional user override.
+ * Decides which execution provider to use.
+ *
+ * Throws rather than guessing when a model cannot run anywhere available: a
+ * clear sentence here is far better than the error ONNX Runtime produces deep
+ * in the shader compiler or allocator several seconds later.
  */
 export async function selectBackend(
   supported: readonly Backend[],
+  requiredGpuFeatures: readonly string[] = [],
   preference?: Backend,
 ): Promise<BackendReport> {
   configureRuntime();
 
-  const webgpu = supported.includes('webgpu')
+  // Held in a const so the narrowing survives into the closure below.
+  const probed: WebGpuProbe = supported.includes('webgpu')
     ? await probeWebGpu()
-    : ({ available: false, reason: 'This model is not run on WebGPU.' } as const);
+    : { available: false, reason: 'This model does not run on WebGPU.' };
 
-  const wantsWasm = preference === 'wasm' || !webgpu.available;
-  const backend: Backend = wantsWasm && supported.includes('wasm') ? 'wasm' : 'webgpu';
+  const missing = probed.available
+    ? requiredGpuFeatures.filter((feature) => !probed.features.has(feature))
+    : [];
+
+  const webgpu: WebGpuProbe =
+    probed.available && missing.length > 0
+      ? {
+          available: false,
+          reason:
+            `This GPU is missing ${missing.join(', ')}, which this model's ` +
+            'half-precision weights require.',
+        }
+      : probed;
+
+  const canUseWasm = supported.includes('wasm');
+  const preferWasm = preference === 'wasm';
+
+  let backend: Backend;
+  if (preferWasm && canUseWasm) {
+    backend = 'wasm';
+  } else if (webgpu.available) {
+    backend = 'webgpu';
+  } else if (canUseWasm) {
+    backend = 'wasm';
+  } else {
+    // Narrowed: every branch above failed, so webgpu is the unavailable shape.
+    throw new Error(
+      `This model needs WebGPU and it is not usable here. ${webgpu.reason}`,
+    );
+  }
 
   return {
     backend,

@@ -6,10 +6,19 @@ import {
   type CacheUsage,
   type DownloadProgress,
 } from '../lib/models/cache.ts';
-import { getMattingModel, type Backend, type MattingModelId } from '../lib/models/registry.ts';
+import {
+  getMattingModel,
+  type Backend,
+  type MattingModelId,
+} from '../lib/models/registry.ts';
 import { MattingSession, type SessionInfo } from '../lib/models/session.ts';
 import { decodeToRgba, resampleRgba, rgbaToPng } from '../lib/image/canvas.ts';
-import { applyMask, refineMask, resizeMask, type EdgeRefinement } from '../lib/image/mask.ts';
+import {
+  applyMask,
+  refineMask,
+  resizeMask,
+  type EdgeRefinement,
+} from '../lib/image/mask.ts';
 import type { GrayMask, Rgba } from '../lib/image/pixels.ts';
 
 export interface SegmentResult {

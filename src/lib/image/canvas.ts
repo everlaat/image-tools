@@ -79,11 +79,7 @@ export async function resampleRgba(
   const source = new OffscreenCanvas(image.width, image.height);
   const sourceCtx = source.getContext('2d');
   if (!sourceCtx) throw new Error('This browser could not provide a 2D canvas context');
-  sourceCtx.putImageData(
-    new ImageData(image.data, image.width, image.height),
-    0,
-    0,
-  );
+  sourceCtx.putImageData(new ImageData(image.data, image.width, image.height), 0, 0);
 
   const bitmap = await createImageBitmap(source);
   try {

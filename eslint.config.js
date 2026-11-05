@@ -33,7 +33,10 @@ export default tseslint.config(
       // Mask/tensor maths reads far better with plain indexed loops.
       '@typescript-eslint/prefer-for-of': 'off',
       // Interpolating a number into a message is fine and very common here.
-      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      '@typescript-eslint/restrict-template-expressions': [
+        'error',
+        { allowNumber: true },
+      ],
     },
   },
 

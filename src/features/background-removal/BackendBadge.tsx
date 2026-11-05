@@ -21,7 +21,9 @@ export function BackendBadge({ session }: BackendBadgeProps) {
           className={`size-1.5 rounded-full ${onGpu ? 'bg-emerald-400' : 'bg-amber-400'}`}
         />
         <span className="font-medium">
-          {onGpu ? 'Running on WebGPU' : `Running on WASM (${wasmThreads} thread${wasmThreads === 1 ? '' : 's'})`}
+          {onGpu
+            ? 'Running on WebGPU'
+            : `Running on WASM (${wasmThreads} thread${wasmThreads === 1 ? '' : 's'})`}
         </span>
       </p>
 

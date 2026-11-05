@@ -7,12 +7,7 @@ import type { EdgeRefinement } from '../../lib/image/mask.ts';
 import type { MattingWorkerApi, SegmentResult } from '../../workers/matting.worker.ts';
 
 export type MattingStatus =
-  | 'idle'
-  | 'loading-model'
-  | 'segmenting'
-  | 'composing'
-  | 'ready'
-  | 'error';
+  'idle' | 'loading-model' | 'segmenting' | 'composing' | 'ready' | 'error';
 
 export interface MattingState {
   readonly status: MattingStatus;

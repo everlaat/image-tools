@@ -77,7 +77,18 @@ export interface MattingModel {
   readonly io: { readonly input: string; readonly output: string };
   readonly input: InputSpec;
   readonly normalisation: Normalisation;
+  /**
+   * Backends this export actually runs on, which is not the same as the
+   * backends it theoretically supports. Measured, not assumed: see the
+   * per-model notes below.
+   */
   readonly backends: readonly Backend[];
+  /**
+   * WebGPU features the export needs. An fp16 graph fails at session creation
+   * on an adapter without `shader-f16`, with an error from deep inside the
+   * shader compiler, so this is checked up front.
+   */
+  readonly requiresGpuFeatures?: readonly string[];
   readonly licence: Licence;
   /** Shown next to the model in the picker when it has a real limitation. */
   readonly caveat?: string;
@@ -85,32 +96,41 @@ export interface MattingModel {
 
 export const MATTING_MODELS: readonly [MattingModel, ...MattingModel[]] = [
   {
-    id: 'birefnet-lite-1024',
-    task: 'matting',
-    label: 'BiRefNet lite',
-    summary: 'Best quality. Handles hair, fur and thin edges on any subject.',
-    repo: 'onnx-community/BiRefNet_lite-ONNX',
-    file: 'onnx/model_fp16.onnx',
-    downloadBytes: 114_538_221,
-    io: { input: 'input_image', output: 'output_image' },
-    input: { kind: 'fixed', width: 1024, height: 1024 },
-    normalisation: IMAGENET,
-    backends: ['webgpu', 'wasm'],
-    licence: LICENCES.mit,
-  },
-  {
     id: 'birefnet-lite-512',
     task: 'matting',
-    label: 'BiRefNet lite (512)',
-    summary: 'A quarter of the pixels of the 1024 model: quicker, slightly softer edges.',
+    label: 'BiRefNet lite',
+    summary:
+      'Good edges on any subject, and the only general model that also runs without a GPU.',
     repo: 'studioludens/birefnet-lite-512',
     file: 'onnx/model_fp16.onnx',
     downloadBytes: 98_484_532,
     io: { input: 'input_image', output: 'output_image' },
     input: { kind: 'fixed', width: 512, height: 512 },
     normalisation: IMAGENET,
+    // Measured: works on both. WASM takes ~14s to build the session and ~9s
+    // per run, which is slow but sound.
     backends: ['webgpu', 'wasm'],
+    requiresGpuFeatures: ['shader-f16'],
     licence: LICENCES.mit,
+  },
+  {
+    id: 'birefnet-lite-1024',
+    task: 'matting',
+    label: 'BiRefNet lite (1024)',
+    summary:
+      'Finest detail on hair and thin edges. Needs a GPU with half-precision support.',
+    repo: 'onnx-community/BiRefNet_lite-ONNX',
+    file: 'onnx/model_fp16.onnx',
+    downloadBytes: 114_538_221,
+    io: { input: 'input_image', output: 'output_image' },
+    input: { kind: 'fixed', width: 1024, height: 1024 },
+    normalisation: IMAGENET,
+    // Measured: WASM dies with std::bad_alloc partway through the run at this
+    // resolution, so WASM is deliberately not offered as a fallback.
+    backends: ['webgpu'],
+    requiresGpuFeatures: ['shader-f16'],
+    licence: LICENCES.mit,
+    caveat: 'WebGPU only — too memory-hungry for the CPU fallback.',
   },
   {
     id: 'modnet',
@@ -129,7 +149,12 @@ export const MATTING_MODELS: readonly [MattingModel, ...MattingModel[]] = [
   },
 ];
 
-export const DEFAULT_MATTING_MODEL_ID: MattingModelId = 'birefnet-lite-1024';
+/**
+ * The 512 BiRefNet rather than the 1024 one: it is the best general-purpose
+ * model that still runs on the WASM fallback, and a default that fails on
+ * every machine without WebGPU is not a default.
+ */
+export const DEFAULT_MATTING_MODEL_ID: MattingModelId = 'birefnet-lite-512';
 
 /**
  * Where weights are fetched from. Override with VITE_MODEL_HOST to use a
