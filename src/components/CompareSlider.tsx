@@ -1,5 +1,7 @@
 import { useId, useState } from 'react';
 
+import type { PreviewBackground } from './BackgroundPicker.tsx';
+
 export interface CompareSliderProps {
   readonly beforeUrl: string;
   readonly afterUrl: string;
@@ -7,6 +9,8 @@ export interface CompareSliderProps {
   readonly afterLabel?: string;
   readonly width: number;
   readonly height: number;
+  /** What shows through the cutout: null is the checkerboard. */
+  readonly background?: PreviewBackground;
 }
 
 /**
@@ -23,6 +27,7 @@ export function CompareSlider({
   afterLabel = 'Result',
   width,
   height,
+  background = null,
 }: CompareSliderProps) {
   const [position, setPosition] = useState(50);
   const labelId = useId();
@@ -30,8 +35,13 @@ export function CompareSlider({
   return (
     <figure className="m-0 flex flex-col gap-2">
       <div
-        className="alpha-grid relative overflow-hidden rounded-lg border border-border-subtle"
-        style={{ aspectRatio: `${width} / ${height}` }}
+        className={`relative overflow-hidden rounded-lg border border-border-subtle ${
+          background === null ? 'alpha-grid' : ''
+        }`}
+        style={{
+          aspectRatio: `${width} / ${height}`,
+          ...(background === null ? {} : { backgroundColor: background }),
+        }}
       >
         <img
           src={afterUrl}
