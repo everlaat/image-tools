@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dropzone } from '../../components/Dropzone.tsx';
 import { CompareSlider } from '../../components/CompareSlider.tsx';
+import {
+  BackgroundPicker,
+  type PreviewBackground,
+} from '../../components/BackgroundPicker.tsx';
 import { ProgressBar } from '../../components/ProgressBar.tsx';
 import { RangeField } from '../../components/RangeField.tsx';
+import { BrushCanvas } from '../../components/BrushCanvas.tsx';
+import type { BrushMode } from '../../lib/image/brush.ts';
 import { BackendBadge } from './BackendBadge.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 import { useMatting } from './useMatting.ts';
@@ -20,8 +26,22 @@ export function BackgroundRemoval() {
   const [modelId, setModelId] = useState<MattingModelId>(DEFAULT_MATTING_MODEL_ID);
   const [refinement, setRefinement] = useState<EdgeRefinement>(DEFAULT_REFINEMENT);
   const [file, setFile] = useState<File | null>(null);
+  const [background, setBackground] = useState<PreviewBackground>(null);
+  const [view, setView] = useState<'compare' | 'brush'>('compare');
+  const [brushMode, setBrushMode] = useState<BrushMode>('add');
+  const [brushRadius, setBrushRadius] = useState(32);
+  const [smartSelect, setSmartSelect] = useState(false);
 
-  const { state, process, recompose, reset } = useMatting(modelId);
+  const {
+    state,
+    process,
+    recompose,
+    paint,
+    undoStroke,
+    clearEdits,
+    smartSelect: pickObject,
+    reset,
+  } = useMatting(modelId);
   const model = getMattingModel(modelId);
 
   const inputUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
@@ -65,13 +85,52 @@ export function BackgroundRemoval() {
         <section className="flex flex-col gap-3" aria-label="Image">
           {!file && <Dropzone onFile={start} disabled={busy} />}
 
-          {file && inputUrl && state.outputUrl && state.result && (
+          {file && inputUrl && state.outputUrl && state.result && view === 'compare' && (
             <CompareSlider
               beforeUrl={inputUrl}
               afterUrl={state.outputUrl}
               width={state.result.width}
               height={state.result.height}
+              background={background}
             />
+          )}
+
+          {file && state.outputUrl && state.result && view === 'brush' && (
+            <BrushCanvas
+              imageUrl={state.outputUrl}
+              width={state.result.width}
+              height={state.result.height}
+              radius={brushRadius}
+              hardness={0.5}
+              mode={brushMode}
+              smartSelect={smartSelect}
+              background={background}
+              disabled={busy}
+              onStroke={(stroke) => {
+                void paint(stroke, refinement);
+              }}
+              onPick={(point) => {
+                void pickObject({ ...point, positive: brushMode === 'add' }, refinement);
+              }}
+            />
+          )}
+
+          {state.result && (
+            <div role="group" aria-label="View" className="flex gap-2">
+              {(['compare', 'brush'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={view === mode}
+                  onClick={() => {
+                    setView(mode);
+                  }}
+                  className="rounded-md border border-border-subtle px-3 py-1.5 text-sm transition-colors hover:bg-surface-raised aria-pressed:border-accent aria-pressed:bg-surface-raised"
+                >
+                  {mode === 'compare' ? 'Compare' : 'Fix with brush'}
+                </button>
+              ))}
+            </div>
           )}
 
           {file && !state.outputUrl && (
@@ -169,6 +228,81 @@ export function BackgroundRemoval() {
             />
           </fieldset>
 
+          {view === 'brush' && state.result && (
+            <fieldset className="flex flex-col gap-3 border-0 p-0">
+              <legend className="mb-1 text-sm font-medium">Brush</legend>
+
+              <div role="group" aria-label="Brush mode" className="flex gap-2">
+                {(['add', 'erase'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={brushMode === mode}
+                    onClick={() => {
+                      setBrushMode(mode);
+                    }}
+                    className="flex-1 rounded-md border border-border-subtle px-2 py-1.5 text-sm transition-colors hover:bg-surface-raised aria-pressed:border-accent aria-pressed:bg-surface-raised"
+                  >
+                    {mode === 'add' ? 'Add subject' : 'Remove'}
+                  </button>
+                ))}
+              </div>
+
+              <RangeField
+                label="Brush size"
+                value={brushRadius}
+                min={4}
+                max={160}
+                step={2}
+                format={(v) => `${String(v)} px`}
+                onChange={setBrushRadius}
+              />
+
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={smartSelect}
+                  onChange={(event) => {
+                    setSmartSelect(event.target.checked);
+                  }}
+                  className="mt-0.5 size-4 accent-accent"
+                />
+                <span>
+                  Smart select
+                  <span className="block text-xs text-ink-muted">
+                    Click an object and SlimSAM selects all of it. Downloads 17.5 MB the
+                    first time.
+                  </span>
+                </span>
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy || state.strokeCount === 0}
+                  onClick={() => {
+                    void undoStroke(refinement);
+                  }}
+                  className="flex-1 rounded-md border border-border-subtle px-2 py-1.5 text-sm enabled:hover:bg-surface-raised disabled:opacity-40"
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || state.strokeCount === 0}
+                  onClick={() => {
+                    void clearEdits(refinement);
+                  }}
+                  className="flex-1 rounded-md border border-border-subtle px-2 py-1.5 text-sm enabled:hover:bg-surface-raised disabled:opacity-40"
+                >
+                  Clear edits
+                </button>
+              </div>
+            </fieldset>
+          )}
+
+          <BackgroundPicker value={background} onChange={setBackground} />
+
           <div className="flex flex-col gap-2">
             <a
               href={state.outputUrl ?? '#'}
@@ -188,6 +322,8 @@ export function BackgroundRemoval() {
                 onClick={() => {
                   setFile(null);
                   setRefinement(DEFAULT_REFINEMENT);
+                  setView('compare');
+                  setSmartSelect(false);
                   reset();
                 }}
                 className="rounded-md border border-border-subtle px-3 py-2 text-sm transition-colors hover:bg-surface-raised"

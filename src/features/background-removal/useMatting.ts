@@ -4,6 +4,8 @@ import type { DownloadProgress } from '../../lib/models/cache.ts';
 import type { Backend, MattingModelId } from '../../lib/models/registry.ts';
 import type { SessionInfo } from '../../lib/models/session.ts';
 import type { EdgeRefinement } from '../../lib/image/mask.ts';
+import type { BrushStroke } from '../../lib/image/brush.ts';
+import type { ClickPoint } from '../../lib/image/sam.ts';
 import type { MattingWorkerApi, SegmentResult } from '../../workers/matting.worker.ts';
 
 export type MattingStatus =
@@ -11,6 +13,8 @@ export type MattingStatus =
 
 export interface MattingState {
   readonly status: MattingStatus;
+  /** Manual brush strokes applied, so undo can be enabled or disabled. */
+  readonly strokeCount: number;
   readonly progress: DownloadProgress | null;
   readonly session: SessionInfo | null;
   readonly result: SegmentResult | null;
@@ -20,6 +24,7 @@ export interface MattingState {
 
 const INITIAL: MattingState = {
   status: 'idle',
+  strokeCount: 0,
   progress: null,
   session: null,
   result: null,
@@ -135,6 +140,81 @@ export function useMatting(modelId: MattingModelId, preferredBackend?: Backend) 
     [api, modelId, preferredBackend, publish],
   );
 
+  /**
+   * Runs a worker call that returns an updated cutout, and publishes it.
+   * Shared by painting, undo and smart select, which differ only in which
+   * worker method they call.
+   */
+  const applyEdit = useCallback(
+    async (
+      run: (worker: Comlink.Remote<MattingWorkerApi>) => Promise<Blob>,
+      nextStrokeCount?: (previous: number) => number,
+    ) => {
+      if (!apiRef.current) return;
+      const runId = runIdRef.current;
+      setState((prev) => ({ ...prev, status: 'composing', error: null }));
+
+      try {
+        const blob = await run(apiRef.current);
+        if (runId !== runIdRef.current) return;
+        setState((prev) => ({
+          ...prev,
+          status: 'ready',
+          outputUrl: publish(blob),
+          strokeCount: nextStrokeCount
+            ? nextStrokeCount(prev.strokeCount)
+            : prev.strokeCount,
+        }));
+      } catch (cause) {
+        setState((prev) => ({ ...prev, status: 'error', error: message(cause) }));
+      }
+    },
+    [publish],
+  );
+
+  const paint = useCallback(
+    async (stroke: BrushStroke, refinement: EdgeRefinement) =>
+      applyEdit(
+        (worker) => worker.paint(stroke, refinement),
+        (n) => n + 1,
+      ),
+    [applyEdit],
+  );
+
+  const undoStroke = useCallback(
+    async (refinement: EdgeRefinement) =>
+      applyEdit(
+        (worker) => worker.undo(refinement),
+        (n) => Math.max(0, n - 1),
+      ),
+    [applyEdit],
+  );
+
+  const clearEdits = useCallback(
+    async (refinement: EdgeRefinement) =>
+      applyEdit(
+        (worker) => worker.clearEdits(refinement),
+        () => 0,
+      ),
+    [applyEdit],
+  );
+
+  const smartSelect = useCallback(
+    async (point: ClickPoint, refinement: EdgeRefinement) =>
+      applyEdit(
+        (worker) =>
+          worker.smartSelect(
+            point,
+            refinement,
+            Comlink.proxy((progress: DownloadProgress) => {
+              setState((prev) => ({ ...prev, progress }));
+            }),
+          ),
+        (n) => n + 1,
+      ),
+    [applyEdit],
+  );
+
   /** Re-composites with new edge settings; no inference, so it is quick. */
   const recompose = useCallback(
     async (refinement: EdgeRefinement) => {
@@ -161,5 +241,15 @@ export function useMatting(modelId: MattingModelId, preferredBackend?: Backend) 
     setState(INITIAL);
   }, []);
 
-  return { state, process, recompose, reset, release };
+  return {
+    state,
+    process,
+    recompose,
+    paint,
+    undoStroke,
+    clearEdits,
+    smartSelect,
+    reset,
+    release,
+  };
 }
