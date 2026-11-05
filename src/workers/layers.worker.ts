@@ -3,24 +3,13 @@ import * as Comlink from 'comlink';
 import * as ort from 'onnxruntime-web/webgpu';
 import { zip } from 'fflate';
 import { loadSession } from '../lib/models/runtime.ts';
+import { SamEngine } from '../lib/models/sam-engine.ts';
 import type { DownloadProgress } from '../lib/models/cache.ts';
-import {
-  DEPTH_MODEL,
-  SEGMENTATION_MODEL,
-  fileUrl,
-  resolveInputSize,
-} from '../lib/models/registry.ts';
+import { DEPTH_MODEL, fileUrl, resolveInputSize } from '../lib/models/registry.ts';
 import { decodeToRgba, resampleRgba, rgbaToPng } from '../lib/image/canvas.ts';
 import { applyMask, refineMask, type EdgeRefinement } from '../lib/image/mask.ts';
 import { toNchwFloat32 } from '../lib/image/tensor.ts';
-import {
-  bestMaskIndex,
-  maskToSource,
-  samTransform,
-  toModelPoint,
-  type ClickPoint,
-  type SamTransform,
-} from '../lib/image/sam.ts';
+import type { ClickPoint } from '../lib/image/sam.ts';
 import { DEFAULT_BANDS, bandsToMasks, normaliseDepth } from '../lib/layers/depth.ts';
 import type { GrayMask, Rgba } from '../lib/image/pixels.ts';
 
@@ -49,14 +38,8 @@ type ProgressFn = (progress: DownloadProgress) => void;
  */
 class LayersWorker {
   private source: Rgba | null = null;
-  private transform: SamTransform | null = null;
-
-  private encoder: ort.InferenceSession | null = null;
-  private decoder: ort.InferenceSession | null = null;
   private depth: ort.InferenceSession | null = null;
-
-  private embeddings: ort.Tensor | null = null;
-  private positional: ort.Tensor | null = null;
+  private readonly sam = new SamEngine();
 
   /** Masks stay here; only PNGs cross the worker boundary. */
   private readonly layers = new Map<string, GrayMask>();
@@ -66,126 +49,24 @@ class LayersWorker {
     this.releaseImageState();
     const decoded = await decodeToRgba(file);
     this.source = decoded.image;
-    this.transform = samTransform(decoded.image, SEGMENTATION_MODEL.longestEdge);
     return { width: decoded.image.width, height: decoded.image.height };
   }
 
   /** Loads SAM and computes the image embeddings every click will reuse. */
   async prepareSegmentation(onProgress?: ProgressFn): Promise<void> {
     const source = this.source;
-    const transform = this.transform;
-    if (!source || !transform) throw new Error('Load an image first');
+    if (!source) throw new Error('Load an image first');
 
-    this.encoder ??= (
-      await loadSession(
-        fileUrl(SEGMENTATION_MODEL.repo, SEGMENTATION_MODEL.encoder.file),
-        SEGMENTATION_MODEL.encoder.downloadBytes,
-        {
-          backends: SEGMENTATION_MODEL.backends,
-          ...(onProgress ? { onProgress } : {}),
-        },
-      )
-    ).session;
-
-    this.decoder ??= (
-      await loadSession(
-        fileUrl(SEGMENTATION_MODEL.repo, SEGMENTATION_MODEL.decoder.file),
-        SEGMENTATION_MODEL.decoder.downloadBytes,
-        {
-          backends: SEGMENTATION_MODEL.backends,
-          ...(onProgress ? { onProgress } : {}),
-        },
-      )
-    ).session;
-
-    if (this.embeddings) return;
-
-    // Resize so the longest edge matches, then pad into a square: that is
-    // exactly what SAM's own processor does, and the point transform assumes
-    // it.
-    const resized = await resampleRgba(
-      source,
-      transform.resizedWidth,
-      transform.resizedHeight,
-    );
-    const padded = padToSquare(resized, transform.paddedSize);
-    const pixels = toNchwFloat32(padded, SEGMENTATION_MODEL.normalisation);
-
-    const input = new ort.Tensor('float32', pixels, [
-      1,
-      3,
-      transform.paddedSize,
-      transform.paddedSize,
-    ]);
-
-    try {
-      const out = await this.encoder.run({ pixel_values: input });
-      const embeddings = out.image_embeddings;
-      const positional = out.image_positional_embeddings;
-      if (!embeddings || !positional)
-        throw new Error('SAM encoder returned no embeddings');
-      this.embeddings = embeddings;
-      this.positional = positional;
-    } finally {
-      input.dispose();
-    }
+    await this.sam.load(onProgress);
+    if (!this.sam.ready) await this.sam.encode(source);
   }
 
   /** Runs the decoder for the current click set and stores the result. */
   async segment(points: readonly ClickPoint[], name: string): Promise<LayerSummary> {
-    const decoder = this.decoder;
-    const transform = this.transform;
-    const embeddings = this.embeddings;
-    const positional = this.positional;
-    if (!decoder || !transform || !embeddings || !positional) {
-      throw new Error('Prepare segmentation before selecting');
-    }
+    if (!this.sam.ready) throw new Error('Prepare segmentation before selecting');
     if (points.length === 0) throw new Error('Click the image to select something');
 
-    const coords = new Float32Array(points.length * 2);
-    const labels = new BigInt64Array(points.length);
-    points.forEach((point, i) => {
-      const [x, y] = toModelPoint(point, transform);
-      coords[i * 2] = x;
-      coords[i * 2 + 1] = y;
-      labels[i] = point.positive ? 1n : 0n;
-    });
-
-    const pointTensor = new ort.Tensor('float32', coords, [1, 1, points.length, 2]);
-    const labelTensor = new ort.Tensor('int64', labels, [1, 1, points.length]);
-
-    try {
-      const out = await decoder.run({
-        input_points: pointTensor,
-        input_labels: labelTensor,
-        image_embeddings: embeddings,
-        image_positional_embeddings: positional,
-      });
-
-      const predicted = out.pred_masks;
-      const scores = out.iou_scores;
-      if (!predicted || !scores) throw new Error('SAM decoder returned no masks');
-
-      const masks = predicted.data as Float32Array;
-      const side = SEGMENTATION_MODEL.maskSize;
-      // Three proposals per click; keep the one SAM rates highest.
-      const best = bestMaskIndex(scores.data as Float32Array);
-      const offset = best * side * side;
-
-      const square: GrayMask = {
-        data: masks.slice(offset, offset + side * side),
-        width: side,
-        height: side,
-      };
-
-      const mask = maskToSource(square, transform, { sigmoid: true });
-      predicted.dispose();
-      scores.dispose();
-      return this.store(mask, name);
-    } finally {
-      pointTensor.dispose();
-      labelTensor.dispose();
-    }
+    return this.store(await this.sam.decode(points), name);
   }
 
   /** Runs depth estimation and turns it into three suggested layers. */
@@ -278,11 +159,8 @@ class LayersWorker {
 
   dispose(): void {
     this.releaseImageState();
-    void this.encoder?.release();
-    void this.decoder?.release();
+    this.sam.dispose();
     void this.depth?.release();
-    this.encoder = null;
-    this.decoder = null;
     this.depth = null;
     this.source = null;
   }
@@ -306,25 +184,9 @@ class LayersWorker {
   }
 
   private releaseImageState(): void {
-    this.embeddings?.dispose();
-    this.positional?.dispose();
-    this.embeddings = null;
-    this.positional = null;
+    this.sam.releaseEmbeddings();
     this.layers.clear();
-    this.transform = null;
   }
-}
-
-/** Pads an image into a top-left aligned square, as SAM's processor does. */
-function padToSquare(image: Rgba, side: number): Rgba {
-  if (image.width === side && image.height === side) return image;
-
-  const data = new Uint8ClampedArray(side * side * 4);
-  for (let y = 0; y < image.height; y += 1) {
-    const from = y * image.width * 4;
-    data.set(image.data.subarray(from, from + image.width * 4), y * side * 4);
-  }
-  return { data, width: side, height: side };
 }
 
 /** Nearest-neighbour lift of a depth map; it is smooth, so this is enough. */
