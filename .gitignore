@@ -1,0 +1,22 @@
+node_modules
+dist
+coverage
+*.local
+.DS_Store
+
+# Vite / tooling caches
+node_modules/.tmp
+.vite
+
+# Playwright
+test-results
+playwright-report
+blob-report
+
+# Rust / wasm build output
+crates/*/target
+crates/*/pkg
+public/wasm
+
+# Local model cache used by scripts
+.models
